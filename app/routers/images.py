@@ -4,9 +4,10 @@ app/routers/images.py
 이미지 관련 라우트.
 """
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 
 from app.crud import images_crud
+from app.schemas.images import ImageListResponse, ImageResponse
 from app.services.ai_pipeline_service import run_ai_pipeline
 from app.services.storage_service import (
     delete_image_from_storage,
@@ -18,7 +19,12 @@ from app.services.storage_service import (
 router = APIRouter(tags=["images"])
 
 
-@router.post("/images")
+@router.post(
+    "/images",
+    response_model=ImageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="이미지 업로드",
+)
 async def upload_image(file: UploadFile = File(...)):
     """
     이미지를 Storage에 업로드하고 images 테이블에 레코드를 생성한다.
@@ -52,15 +58,14 @@ async def upload_image(file: UploadFile = File(...)):
         delete_image_from_storage(storage_path)
         raise
 
-    return {
-        "id": image["id"],
-        "storage_path": image["storage_path"],
-        "created_at": image["created_at"],
-        "signed_url": get_signed_url(storage_path),
-    }
+    return ImageResponse(**image, signed_url=get_signed_url(storage_path))
 
 
-@router.get("/images/{image_id}")
+@router.get(
+    "/images/{image_id}",
+    response_model=ImageResponse,
+    summary="이미지 상세 조회",
+)
 def get_image(image_id: str):
     """
     이미지 상세 조회.
@@ -72,13 +77,14 @@ def get_image(image_id: str):
     if image is None:
         raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.")
 
-    return {
-        **image,
-        "signed_url": get_signed_url(image["storage_path"]),
-    }
+    return ImageResponse(**image, signed_url=get_signed_url(image["storage_path"]))
 
 
-@router.get("/images")
+@router.get(
+    "/images",
+    response_model=ImageListResponse,
+    summary="이미지 목록 조회",
+)
 def list_images(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -95,9 +101,9 @@ def list_images(
     storage_paths = [image["storage_path"] for image in images]
     signed_urls = get_signed_urls(storage_paths)
 
-    return {
-        "data": [
-            {**image, "signed_url": signed_urls.get(image["storage_path"])}
+    return ImageListResponse(
+        data=[
+            ImageResponse(**image, signed_url=signed_urls.get(image["storage_path"]))
             for image in images
         ]
-    }
+    )
