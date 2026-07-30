@@ -8,9 +8,23 @@ search_text가 항상 null로 내려간다).
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+# Qwen 구조화 추출 스펙(app/services/ai_pipeline_service.py 상단 docstring)의
+# primary_category 후보값과 동일하게 맞춘다. AI Pipeline이 채우는 값과 사용자가
+# PATCH로 보정하는 값이 항상 같은 후보 집합을 쓰도록 하기 위함.
+CategoryLiteral = Literal[
+    "coupon",
+    "ticket",
+    "reservation",
+    "academic",
+    "receipt",
+    "document",
+    "photo",
+    "other",
+]
 
 
 class ImageResponse(BaseModel):
@@ -44,3 +58,13 @@ class ImageResponse(BaseModel):
 
 class ImageListResponse(BaseModel):
     data: List[ImageResponse]
+
+
+class CategoryUpdateRequest(BaseModel):
+    category: CategoryLiteral = Field(
+        ...,
+        description=(
+            "변경할 카테고리. Qwen 구조화 추출 스펙과 동일한 8개 후보값만 허용 "
+            "(coupon/ticket/reservation/academic/receipt/document/photo/other)."
+        ),
+    )
