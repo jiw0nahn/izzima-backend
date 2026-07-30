@@ -4,7 +4,7 @@
 서버 실행 후 `http://<host>:8000/docs` (Swagger UI) 또는 `/openapi.json`에서
 항상 최신 상태로 확인 가능합니다.
 
-- Base URL: 로컬 개발 시 `http://127.0.0.1:8000` (배포 URL은 별도 공지)
+- Base URL: izzima-production.up.railway.app
 - 인증: **없음.** 현재 모든 엔드포인트는 누구나 호출 가능하고, 소유권 필터링이
   없습니다 (`GET /images`가 전체 사용자의 이미지를 반환). auth 도입 전까지는
   프론트에서 사용자별 데이터 분리를 기대하면 안 됩니다.
@@ -40,6 +40,7 @@ FastAPI 기본 형식을 그대로 사용합니다.
 |---|---|
 | 400 | 잘못된 요청 (지원하지 않는 확장자, 용량 초과 등) |
 | 404 | 대상 리소스 없음 |
+| 422 | 요청 body 유효성 검증 실패 (예: `category`가 허용된 8개 값 밖) |
 | 502 | 서버가 Supabase(Storage/DB) 호출에 실패 |
 
 ---
@@ -89,6 +90,44 @@ FastAPI 기본 형식을 그대로 사용합니다.
 
 ---
 
+## `PATCH /images/{image_id}/category` — 이미지 카테고리 변경
+
+AI Pipeline(Qwen)이 잘못 분류했을 때 사용자가 직접 보정하는 용도입니다.
+
+- Path param: `image_id` (uuid string)
+- Request body (JSON):
+
+```json
+{ "category": "coupon" }
+```
+
+  - `category`: 다음 8개 값 중 하나만 허용 — `coupon`, `ticket`, `reservation`,
+    `academic`, `receipt`, `document`, `photo`, `other`. 그 외 값은 `422`.
+- Response: `200 OK`, body는 `ImageResponse` (변경된 `category` 반영)
+- `404` — 해당 id의 이미지가 없음
+- `422` — `category`가 허용 목록 밖의 값
+
+주의: 소유권 검증이 없어 `image_id`만 알면 누구나 변경 가능합니다 (auth 도입 전 임시 상태).
+
+---
+
+## `DELETE /images/{image_id}` — 이미지 삭제
+
+이미지 레코드(DB)와 Storage 파일을 함께 삭제합니다.
+
+- Path param: `image_id` (uuid string)
+- Response: `204 No Content` (body 없음)
+- `404` — 해당 id의 이미지가 없음
+- `502` — DB 레코드 삭제 실패 (이 경우 Storage 파일 삭제는 시도하지 않음)
+
+주의:
+- 소유권 검증이 없어 `image_id`만 알면 누구나 삭제 가능합니다 (auth 도입 전 임시 상태).
+- 삭제는 되돌릴 수 없습니다 (soft delete 아님).
+- DB 레코드 삭제 후 Storage 파일 삭제를 시도하지만, Storage 삭제 실패는 조용히
+  무시되므로(이미 없는 파일일 수 있음) 드물게 Storage에 고아 파일이 남을 수 있습니다.
+
+---
+
 ## `GET /images` — 이미지 목록 조회 (최신순, 평면 목록)
 
 - Query params:
@@ -116,4 +155,3 @@ FastAPI 기본 형식을 그대로 사용합니다.
 - 카테고리 폴더 UI에 쓸 수 있는 실제 `category` 값
 - 자연어 검색 API (`search_text`/pgvector 기반) — `embeddings_crud`/`embedding_service`가 아직 스텁
 - 만료 이벤트(D-day) 추천 카드 API — `events_crud`가 아직 스텁
-- 이미지 삭제 API
