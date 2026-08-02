@@ -7,7 +7,7 @@ from pydantic import BaseModel, ValidationError
 from models import Event
 
 
-MODEL_NAME = "qwen3.5:2b"
+MODEL_NAME = "qwen3.5:4b"
 
 
 EventType = Literal[
