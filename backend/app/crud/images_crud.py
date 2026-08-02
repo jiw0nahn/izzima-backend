@@ -62,6 +62,45 @@ def get_image(image_id: str) -> Optional[dict]:
     return response.data[0] if response.data else None
 
 
+def update_image_category(image_id: str, category: str) -> Optional[dict]:
+    """
+    이미지의 category를 수정한다. 대상 id가 없으면 None (라우터에서 404 처리).
+    """
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("images")
+            .update({"category": category})
+            .eq("id", image_id)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"카테고리 변경에 실패했습니다: {str(e)}",
+        )
+
+    return response.data[0] if response.data else None
+
+
+def delete_image(image_id: str) -> Optional[dict]:
+    """
+    이미지 레코드를 삭제한다. 삭제된 레코드를 반환하고, 대상 id가 없으면 None
+    (라우터에서 404 처리). storage_path가 필요한 호출부가 Storage 파일도 지울 수
+    있도록 삭제된 레코드 전체를 반환한다.
+    """
+    supabase = get_supabase_client()
+    try:
+        response = supabase.table("images").delete().eq("id", image_id).execute()
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"이미지 삭제에 실패했습니다: {str(e)}",
+        )
+
+    return response.data[0] if response.data else None
+
+
 def list_images(limit: int = 20, offset: int = 0) -> list[dict]:
     """
     최신순으로 이미지 레코드 목록을 조회한다.
