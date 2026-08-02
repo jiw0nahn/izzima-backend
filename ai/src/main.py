@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from qwen import QwenService
+from blip import generate_caption
 
 
 OUTPUT_FOLDER = Path("outputs")
@@ -33,7 +34,7 @@ def load_ocr_text(json_path: Path) -> str:
 
 
 def main() -> None:
-    qwen_service = QwenService()
+    """ qwen_service = QwenService()
 
     for file_name in TEST_FILES:
         json_path = OUTPUT_FOLDER / file_name
@@ -51,7 +52,16 @@ def main() -> None:
             print(event.model_dump_json(indent=2))
 
         except Exception as error:
-            print(f"\n처리 실패: {error}")
+            print(f"\n처리 실패: {error}") """
+    image_path = Path("images/2.jpeg")
+    image_bytes = image_path.read_bytes()
+
+    caption = generate_caption(image_bytes)
+
+    print("BLIP caption:")
+    print(caption)
+
+    
 
 
 if __name__ == "__main__":

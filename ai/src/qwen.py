@@ -298,3 +298,5 @@ OCR 텍스트:
             ocr_text=ocr_text,
             event_type=event_type,
         )
+
+    
