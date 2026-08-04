@@ -30,7 +30,7 @@ CategoryLiteral = Literal[
 class ImageResponse(BaseModel):
     id: str
     user_id: Optional[str] = Field(
-        None, description="업로더 id. auth 미도입 상태라 현재는 항상 null."
+        None, description="업로더 uuid. 인증 토큰(sub claim)에서 추출된 값."
     )
     storage_path: str = Field(..., description="Supabase Storage 상의 object key.")
     ocr_text: Optional[str] = Field(
