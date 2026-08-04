@@ -13,22 +13,20 @@ from app.core.supabase_client import get_supabase_client
 
 def create_image(
     storage_path: str,
-    user_id: Optional[str] = None,
+    user_id: str,
     ocr_text: Optional[str] = None,
     caption: Optional[str] = None,
     category: Optional[str] = None,
     search_text: Optional[str] = None,
 ) -> dict:
     """
-    새 이미지 레코드를 생성한다.
+    새 이미지 레코드를 생성한다. user_id는 인증된 요청자의 uuid(필수).
 
     ocr_text/caption/category/search_text는 AI Pipeline 결과가 있을 때만 채워지고,
     없으면 (파이프라인 미연동 상태 포함) DB 기본값인 null로 남는다.
     """
     supabase = get_supabase_client()
-    payload = {"storage_path": storage_path}
-    if user_id:
-        payload["user_id"] = user_id
+    payload = {"storage_path": storage_path, "user_id": user_id}
     if ocr_text is not None:
         payload["ocr_text"] = ocr_text
     if caption is not None:
@@ -55,16 +53,26 @@ def create_image(
     return response.data[0]
 
 
-def get_image(image_id: str) -> Optional[dict]:
-    """id로 이미지 레코드 하나를 조회한다. 없으면 None."""
+def get_image(image_id: str, user_id: str) -> Optional[dict]:
+    """
+    id로 이미지 레코드 하나를 조회한다. user_id 소유 레코드가 아니면 None을 반환해
+    다른 사용자의 이미지 존재 여부 자체가 노출되지 않게 한다 (라우터에서 404 처리).
+    """
     supabase = get_supabase_client()
-    response = supabase.table("images").select("*").eq("id", image_id).execute()
+    response = (
+        supabase.table("images")
+        .select("*")
+        .eq("id", image_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
     return response.data[0] if response.data else None
 
 
-def update_image_category(image_id: str, category: str) -> Optional[dict]:
+def update_image_category(image_id: str, category: str, user_id: str) -> Optional[dict]:
     """
-    이미지의 category를 수정한다. 대상 id가 없으면 None (라우터에서 404 처리).
+    이미지의 category를 수정한다. 대상 id가 없거나 user_id 소유가 아니면 None
+    (라우터에서 404 처리).
     """
     supabase = get_supabase_client()
     try:
@@ -72,6 +80,7 @@ def update_image_category(image_id: str, category: str) -> Optional[dict]:
             supabase.table("images")
             .update({"category": category})
             .eq("id", image_id)
+            .eq("user_id", user_id)
             .execute()
         )
     except Exception as e:
@@ -83,15 +92,21 @@ def update_image_category(image_id: str, category: str) -> Optional[dict]:
     return response.data[0] if response.data else None
 
 
-def delete_image(image_id: str) -> Optional[dict]:
+def delete_image(image_id: str, user_id: str) -> Optional[dict]:
     """
-    이미지 레코드를 삭제한다. 삭제된 레코드를 반환하고, 대상 id가 없으면 None
-    (라우터에서 404 처리). storage_path가 필요한 호출부가 Storage 파일도 지울 수
-    있도록 삭제된 레코드 전체를 반환한다.
+    이미지 레코드를 삭제한다. 삭제된 레코드를 반환하고, 대상 id가 없거나 user_id
+    소유가 아니면 None (라우터에서 404 처리). storage_path가 필요한 호출부가
+    Storage 파일도 지울 수 있도록 삭제된 레코드 전체를 반환한다.
     """
     supabase = get_supabase_client()
     try:
-        response = supabase.table("images").delete().eq("id", image_id).execute()
+        response = (
+            supabase.table("images")
+            .delete()
+            .eq("id", image_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
     except Exception as e:
         raise HTTPException(
             status_code=502,
@@ -101,9 +116,9 @@ def delete_image(image_id: str) -> Optional[dict]:
     return response.data[0] if response.data else None
 
 
-def list_images(limit: int = 20, offset: int = 0) -> list[dict]:
+def list_images(user_id: str, limit: int = 20, offset: int = 0) -> list[dict]:
     """
-    최신순으로 이미지 레코드 목록을 조회한다.
+    요청자(user_id) 소유 이미지만 최신순으로 조회한다.
 
     카테고리 폴더링은 아직 미지원 - AI Pipeline이 연동되기 전이라 모든 레코드의
     category가 null이므로, 지금은 시간순 평면 목록만 제공한다.
@@ -112,6 +127,7 @@ def list_images(limit: int = 20, offset: int = 0) -> list[dict]:
     response = (
         supabase.table("images")
         .select("*")
+        .eq("user_id", user_id)
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
         .execute()
