@@ -1,13 +1,15 @@
-# 이미지 API 명세 (v0.1.0)
+# 이미지/이벤트 API 명세 (v0.1.0)
 
 프론트엔드(React Native) 연동용 문서. 이 문서에 없는 최신 스키마/에러 케이스는
 서버 실행 후 `http://<host>:8000/docs` (Swagger UI) 또는 `/openapi.json`에서
 항상 최신 상태로 확인 가능합니다.
 
 - Base URL: izzima-production.up.railway.app
-- 인증: **없음.** 현재 모든 엔드포인트는 누구나 호출 가능하고, 소유권 필터링이
-  없습니다 (`GET /images`가 전체 사용자의 이미지를 반환). auth 도입 전까지는
-  프론트에서 사용자별 데이터 분리를 기대하면 안 됩니다.
+- 인증: **필수.** 모든 엔드포인트가 `Authorization: Bearer <supabase-access-token>`
+  헤더를 요구합니다 (Supabase Auth JWT). 헤더가 없거나 토큰이 유효하지 않으면
+  `401`. 모든 조회/수정/삭제는 토큰에서 추출한 사용자 소유 레코드로만 제한되고,
+  다른 사용자의 리소스는 (403이 아니라) `404`로 응답해 존재 여부 자체를
+  노출하지 않습니다.
 - 데이터 형식: 요청은 `multipart/form-data`(업로드) 또는 없음, 응답은 전부 JSON.
 
 ## 공통 사항
@@ -19,7 +21,7 @@
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `id` | string (uuid) | 이미지 레코드 id |
-| `user_id` | string \| null | 업로더 id. **auth 미도입 상태라 현재 항상 null.** |
+| `user_id` | string \| null | 업로더 uuid (인증 토큰의 sub claim) |
 | `storage_path` | string | Storage 상의 object key (프론트에서 직접 쓸 일 없음, 참고용) |
 | `ocr_text` | string \| null | OCR 텍스트. **AI Pipeline 미연동이라 현재 항상 null.** |
 | `caption` | string \| null | 이미지 캡션. **현재 항상 null.** |
@@ -27,6 +29,23 @@
 | `search_text` | string \| null | 자연어 검색용 텍스트. **현재 항상 null.** |
 | `created_at` | string (ISO 8601 datetime) | 생성 시각 |
 | `signed_url` | string \| null | private 버킷의 임시 서명 URL. **기본 24시간 후 만료 — 캐시/영구 저장하지 말고, 화면에 진입할 때마다 새로 받은 응답의 값을 사용할 것.** 서명 발급 자체가 실패한 경우 null일 수 있음. |
+
+### 이벤트 객체 (`EventResponse`)
+
+`GET /images/{image_id}/events`, `GET /events`의 각 항목이 공통으로 이 형태입니다.
+AI Pipeline이 이미지 업로드 시 이벤트 정보를 추출한 경우에만 생성되고, 지금은
+GPU 서버 쪽 Qwen 연동이 막혀 있어 **실제로는 항상 빈 목록**이 내려갑니다.
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `id` | string (uuid) | 이벤트 레코드 id |
+| `image_id` | string (uuid) | 이 이벤트가 추출된 원본 이미지 id |
+| `event_type` | string | `expiration`/`exam`/`assignment_due`/`reservation`/`departure`/`check_in`/`performance`/`meeting`/`schedule` 중 하나 (`none`은 저장되지 않음) |
+| `title` | string \| null | |
+| `event_date` | string \| null | `YYYY-MM-DD` |
+| `event_time` | string \| null | `HH:MM` |
+| `location` | string \| null | |
+| `created_at` | string (ISO 8601 datetime) | 생성 시각 |
 
 ### 에러 응답
 
@@ -58,7 +77,7 @@ FastAPI 기본 형식을 그대로 사용합니다.
 ```json
 {
   "id": "5097ae32-7ce8-483a-81b3-a643123c115b",
-  "user_id": null,
+  "user_id": "b6e0a9f2-1234-4a5b-9c3d-abcdef123456",
   "storage_path": "2026/07/28/495edd2fedd547e9b7c38b1f6b6e17e3.png",
   "ocr_text": null,
   "caption": null,
@@ -84,9 +103,7 @@ FastAPI 기본 형식을 그대로 사용합니다.
 
 - Path param: `image_id` (uuid string)
 - Response: `200 OK`, body는 `ImageResponse`
-- `404` — 해당 id의 이미지가 없음
-
-주의: 소유권 검증이 없어 `image_id`만 알면 누구나 조회 가능합니다 (auth 도입 전 임시 상태).
+- `404` — 해당 id의 이미지가 없음, 또는 요청자 소유가 아님
 
 ---
 
@@ -104,10 +121,8 @@ AI Pipeline(Qwen)이 잘못 분류했을 때 사용자가 직접 보정하는 �
   - `category`: 다음 8개 값 중 하나만 허용 — `coupon`, `ticket`, `reservation`,
     `academic`, `receipt`, `document`, `photo`, `other`. 그 외 값은 `422`.
 - Response: `200 OK`, body는 `ImageResponse` (변경된 `category` 반영)
-- `404` — 해당 id의 이미지가 없음
+- `404` — 해당 id의 이미지가 없음, 또는 요청자 소유가 아님
 - `422` — `category`가 허용 목록 밖의 값
-
-주의: 소유권 검증이 없어 `image_id`만 알면 누구나 변경 가능합니다 (auth 도입 전 임시 상태).
 
 ---
 
@@ -117,11 +132,11 @@ AI Pipeline(Qwen)이 잘못 분류했을 때 사용자가 직접 보정하는 �
 
 - Path param: `image_id` (uuid string)
 - Response: `204 No Content` (body 없음)
-- `404` — 해당 id의 이미지가 없음
+- `404` — 해당 id의 이미지가 없음, 또는 요청자 소유가 아님
 - `502` — DB 레코드 삭제 실패 (이 경우 Storage 파일 삭제는 시도하지 않음)
 
 주의:
-- 소유권 검증이 없어 `image_id`만 알면 누구나 삭제 가능합니다 (auth 도입 전 임시 상태).
+- 딸린 이벤트(`events`)가 먼저 정리되고 나서 이미지 레코드가 삭제됩니다.
 - 삭제는 되돌릴 수 없습니다 (soft delete 아님).
 - DB 레코드 삭제 후 Storage 파일 삭제를 시도하지만, Storage 삭제 실패는 조용히
   무시되므로(이미 없는 파일일 수 있음) 드물게 Storage에 고아 파일이 남을 수 있습니다.
@@ -143,15 +158,50 @@ AI Pipeline(Qwen)이 잘못 분류했을 때 사용자가 직접 보정하는 �
 
 주의:
 - 카테고리 폴더링 없음 — 모든 `category`가 null이라 지금은 폴더 UI에 쓸 수 없는 단순 리스트입니다.
-- 소유권 필터링 없음 — 전체 사용자의 이미지가 한 목록에 섞여 반환됩니다.
+- 요청자 소유 이미지만 반환합니다.
 - offset 기반 페이지네이션 — 총 개수(`total`)는 응답에 없으므로, "다음 페이지 있음" 여부는
   `data.length == limit`인지로 판단하세요 (같으면 다음 페이지가 있을 수 있음).
 
 ---
 
+## `GET /images/{image_id}/events` — 특정 이미지에 딸린 이벤트 조회
+
+- Path param: `image_id` (uuid string)
+- Response: `200 OK`
+
+```json
+{
+  "data": [ /* EventResponse[] — 보통 0개 또는 1개 */ ]
+}
+```
+
+- `404` — 해당 id의 이미지가 없음, 또는 요청자 소유가 아님
+
+주의: AI Pipeline의 Qwen 연동이 아직 막혀 있어 지금은 항상 `data: []`가 내려옵니다.
+
+---
+
+## `GET /events` — 요청자 전체 이벤트 목록 (D-day 추천 카드용)
+
+- Query params: 없음
+- Response: `200 OK`
+
+```json
+{
+  "data": [ /* EventResponse[], event_date 오름차순(가까운 D-day가 먼저). 날짜 없는 이벤트는 뒤로 밀림 */ ]
+}
+```
+
+주의:
+- 페이지네이션 없음 — 사용자당 이벤트 수가 적다고 보고 전체를 한 번에 반환합니다. 늘어나면 바뀔 수 있습니다.
+- 추천 카드 노출 개수/지난 이벤트 숨김 같은 정책은 이 API의 책임이 아니라 호출부(프론트 또는 별도 추천 로직)가 정합니다.
+- AI Pipeline의 Qwen 연동이 아직 막혀 있어 지금은 항상 `data: []`가 내려옵니다.
+
+---
+
 ## 아직 없는 것 (프론트에서 기대하면 안 되는 기능)
 
-- 로그인/인증, 사용자별 데이터 분리
 - 카테고리 폴더 UI에 쓸 수 있는 실제 `category` 값
-- 자연어 검색 API (`search_text`/pgvector 기반) — `embeddings_crud`/`embedding_service`가 아직 스텁
-- 만료 이벤트(D-day) 추천 카드 API — `events_crud`가 아직 스텁
+- 자연어 검색 API (`search_text`/pgvector 기반) — `embeddings_crud`는 구현됐지만 `embedding_service`(KURE-v1 호출)가 아직 스텁
+- 실제 이벤트 데이터 — `events_crud`/`/events` API 자체는 구현됐지만, GPU 서버의 Qwen(Ollama)이 응답하지 않아 이벤트가 생성되지 않음
+- 이미지 태그(`image_tags`) 관련 API — 테이블 자체가 아직 crud/router 없음

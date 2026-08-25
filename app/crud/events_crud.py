@@ -66,6 +66,30 @@ def get_events_by_image(image_id: str) -> list[dict]:
     return response.data
 
 
+def list_events_by_images(image_ids: list[str]) -> list[dict]:
+    """
+    여러 이미지에 딸린 이벤트를 event_date 오름차순(가까운 D-day가 먼저)으로
+    조회한다. Postgres의 ASC 정렬은 기본이 NULLS LAST라 날짜가 없는 이벤트는
+    자동으로 뒤로 밀린다.
+
+    image_ids는 호출부(app/routers/events.py)가 images_crud.list_all_image_ids
+    등으로 이미 소유권을 걸러낸 목록이라고 가정한다 - 이 함수 자체는 소유권을
+    모른다.
+    """
+    if not image_ids:
+        return []
+
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("events")
+        .select("*")
+        .in_("image_id", image_ids)
+        .order("event_date")
+        .execute()
+    )
+    return response.data
+
+
 def delete_events_by_image(image_id: str) -> None:
     """이미지 삭제 시 함께 정리하기 위해 image_id에 딸린 이벤트를 전부 삭제한다."""
     supabase = get_supabase_client()
