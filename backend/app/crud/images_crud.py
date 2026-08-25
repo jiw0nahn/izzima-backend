@@ -133,3 +133,17 @@ def list_images(user_id: str, limit: int = 20, offset: int = 0) -> list[dict]:
         .execute()
     )
     return response.data
+
+
+def list_all_image_ids(user_id: str) -> list[str]:
+    """
+    요청자(user_id) 소유 이미지 id를 페이지네이션 없이 전부 조회한다.
+
+    events 조회처럼 "이 사용자의 이미지에 딸린 걸 다 보여줘" 식으로 image_id
+    목록 전체가 먼저 필요한 호출부(app/crud/events_crud.py::list_events_by_images)
+    전용 - list_images처럼 화면에 그릴 이미지 자체가 필요한 경우에는 페이지네이션이
+    있는 list_images를 써야 한다.
+    """
+    supabase = get_supabase_client()
+    response = supabase.table("images").select("id").eq("user_id", user_id).execute()
+    return [row["id"] for row in response.data]
