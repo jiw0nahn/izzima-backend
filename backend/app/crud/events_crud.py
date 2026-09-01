@@ -8,6 +8,7 @@ events 테이블은 image_id로만 images를 참조하고 자체 user_id 컬럼�
 이미 끝냈다고 가정한다.
 """
 
+from datetime import date
 from typing import Optional
 
 from fastapi import HTTPException
@@ -66,11 +67,16 @@ def get_events_by_image(image_id: str) -> list[dict]:
     return response.data
 
 
-def list_events_by_images(image_ids: list[str]) -> list[dict]:
+def list_events_by_images(image_ids: list[str], upcoming: bool = False) -> list[dict]:
     """
     여러 이미지에 딸린 이벤트를 event_date 오름차순(가까운 D-day가 먼저)으로
     조회한다. Postgres의 ASC 정렬은 기본이 NULLS LAST라 날짜가 없는 이벤트는
     자동으로 뒤로 밀린다.
+
+    upcoming=True면 오늘(date.today()) 이후(당일 포함) event_date를 가진 이벤트만
+    남긴다 - 지난 이벤트와 event_date가 없는 이벤트는 D-day 카드 후보가 아니므로
+    제외한다. 이 필터는 응답에서만 빠지는 것이지 삭제가 아니라, upcoming=False(기본값)로
+    호출하면 지금까지처럼 전부 그대로 조회된다.
 
     image_ids는 호출부(app/routers/events.py)가 images_crud.list_all_image_ids
     등으로 이미 소유권을 걸러낸 목록이라고 가정한다 - 이 함수 자체는 소유권을
@@ -80,13 +86,10 @@ def list_events_by_images(image_ids: list[str]) -> list[dict]:
         return []
 
     supabase = get_supabase_client()
-    response = (
-        supabase.table("events")
-        .select("*")
-        .in_("image_id", image_ids)
-        .order("event_date")
-        .execute()
-    )
+    query = supabase.table("events").select("*").in_("image_id", image_ids)
+    if upcoming:
+        query = query.gte("event_date", date.today().isoformat())
+    response = query.order("event_date").execute()
     return response.data
 
 
