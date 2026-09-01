@@ -5,7 +5,7 @@ from pipeline import run_pipeline
 
 
 def main() -> None:
-    image_path = Path("images/29.png")
+    image_path = Path("images/4.png")
 
     if not image_path.exists():
         raise FileNotFoundError(

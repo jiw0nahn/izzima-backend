@@ -73,11 +73,9 @@ def postprocess_event(
 
     metadata = event.metadata.model_dump()
 
-    if event.type == "expiration" and metadata.get("amount") is None:
+    if event.type == "expiration":
         amount = extract_amount_from_ocr(ocr_text)
-
-        if amount is not None:
-            metadata["amount"] = amount
+        metadata["amount"] = amount
 
     updated_event = event.model_copy(
         update={
