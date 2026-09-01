@@ -1,13 +1,13 @@
 import json
-from typing import Literal
+import os
 
+from typing import Literal
 from ollama import chat
 from pydantic import BaseModel, ValidationError
-
 from models import Event
 
 
-MODEL_NAME = "qwen3.5:4b"
+MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
 
 
 EventType = Literal[
