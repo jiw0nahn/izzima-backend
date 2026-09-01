@@ -1,15 +1,39 @@
 import { API_BASE_URL } from "@/constants/config";
+import { getStoredAccessToken } from "@/lib/authStorage";
+
+async function getAccessToken(): Promise<string | null> {
+  return getStoredAccessToken();
+}
+
+async function authHeaders(
+  extra?: Record<string, string>,
+): Promise<Record<string, string>> {
+  const token = await getAccessToken();
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
+  };
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
+    headers: await authHeaders({
+      "Content-Type": "application/json",
+      ...(init?.headers as Record<string, string> | undefined),
+    }),
   });
 
   if (!response.ok) {
+    const body = await response.json().catch(() => null);
     throw new Error(
-      `API request failed: ${response.status} ${response.statusText}`,
+      body?.detail ??
+        `API request failed: ${response.status} ${response.statusText}`,
     );
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return response.json() as Promise<T>;
@@ -22,21 +46,41 @@ export const api = {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     }),
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, {
+      method: "PATCH",
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+  delete: (path: string) => request<void>(path, { method: "DELETE" }),
 };
 
-export interface UploadImageResponse {
+export type ImageCategory =
+  | "coupon"
+  | "ticket"
+  | "reservation"
+  | "academic"
+  | "receipt"
+  | "document"
+  | "photo"
+  | "other";
+
+export interface ImageResponse {
   id: string;
   user_id: string | null;
   storage_path: string;
   ocr_text: string | null;
   caption: string | null;
-  category: string | null;
+  category: ImageCategory | null;
   search_text: string | null;
   created_at: string;
   signed_url: string | null;
 }
 
-export async function uploadImage(uri: string): Promise<UploadImageResponse> {
+export interface ImageListResponse {
+  data: ImageResponse[];
+}
+
+export async function uploadImage(uri: string): Promise<ImageResponse> {
   const filename = uri.split("/").pop() ?? `upload-${Date.now()}.jpg`;
   const extension = filename.split(".").pop()?.toLowerCase();
   const mimeType =
@@ -49,7 +93,6 @@ export async function uploadImage(uri: string): Promise<UploadImageResponse> {
           : "image/jpeg";
 
   const formData = new FormData();
-  // React Native의 FormData는 웹과 달리 { uri, name, type } 객체를 file 필드로 받음
   formData.append("file", {
     uri,
     name: filename,
@@ -59,7 +102,7 @@ export async function uploadImage(uri: string): Promise<UploadImageResponse> {
   const response = await fetch(`${API_BASE_URL}/images`, {
     method: "POST",
     body: formData,
-    // Content-Type을 직접 지정하면 안 됨 — fetch가 multipart boundary를 자동 생성해야 함
+    headers: await authHeaders(),
   });
 
   if (!response.ok) {
@@ -68,4 +111,30 @@ export async function uploadImage(uri: string): Promise<UploadImageResponse> {
   }
 
   return response.json();
+}
+
+export function getImage(imageId: string): Promise<ImageResponse> {
+  return api.get<ImageResponse>(`/images/${imageId}`);
+}
+
+export function listImages(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<ImageListResponse> {
+  const query = new URLSearchParams();
+  if (params?.limit != null) query.set("limit", String(params.limit));
+  if (params?.offset != null) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  return api.get<ImageListResponse>(`/images${qs ? `?${qs}` : ""}`);
+}
+
+export function updateImageCategory(
+  imageId: string,
+  category: ImageCategory,
+): Promise<ImageResponse> {
+  return api.patch<ImageResponse>(`/images/${imageId}/category`, { category });
+}
+
+export function deleteImage(imageId: string): Promise<void> {
+  return api.delete(`/images/${imageId}`);
 }
