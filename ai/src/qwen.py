@@ -7,6 +7,7 @@ from ollama import chat
 from pydantic import BaseModel, ValidationError
 
 from models import Event
+from postprocess import postprocess_event
 
 
 EventType = Literal[
@@ -57,35 +58,14 @@ OCR 텍스트:
 {normalized_caption or "없음"}
 """.strip()
 
-    @staticmethod
-    def _build_search_text(event: Event) -> str:
-        """
-        구조화된 Event 데이터를 기반으로 검색용 텍스트를 생성한다.
-
-        주문번호, 교환코드, 예매번호 등 식별 정보는 검색 텍스트에 넣지 않는다.
-        """
-
-        parts = [
-            event.title,
-            event.type,
-            event.date,
-            event.time,
-            event.location,
-        ]
-
-        return " ".join(
-            str(value).strip()
-            for value in parts
-            if value is not None and str(value).strip()
-        )
-
     def classify_event_type(
         self,
         ocr_text: str,
         caption: str | None = None,
     ) -> EventType:
         """
-        OCR 텍스트와 BLIP 이미지 캡션을 바탕으로 이벤트 유형을 분류한다.
+        OCR 텍스트와 BLIP 이미지 캡션을 기반으로
+        이벤트 유형을 분류한다.
         """
 
         input_context = self._build_input_context(
@@ -105,18 +85,20 @@ OCR 텍스트:
 정보 출처 우선순위:
 
 1. OCR 텍스트
-   - 날짜, 시간, 장소, 상품명 등 정확한 문자 정보의 주 근거다.
+   - 날짜, 시간, 장소, 상품명 등
+     정확한 문자 정보의 주 근거다.
 
 2. 이미지 캡션
-   - 이미지 전체의 맥락과 문서 종류를 판단하기 위한 보조 정보다.
+   - 이미지의 종류와 전체적인 맥락을 판단하는 보조 정보다.
 
 OCR 텍스트와 이미지 캡션이 충돌하면 OCR 텍스트를 우선한다.
 
 이미지 캡션만으로 날짜, 시간, 장소, 금액 등의
-구체적인 정보를 추측하지 않는다.
+구체적인 값을 추측하지 않는다.
 
-OCR에는 잘못 인식된 문자열이나 의미 없는 문자 조각이 포함될 수 있다.
-문맥적 근거가 없는 깨진 문자열은 분류 근거로 사용하지 않는다.
+OCR에는 일부 잘못 인식된 문자열이 포함될 수 있다.
+하지만 정상적으로 의미를 파악할 수 있는 상품명, 날짜, 장소,
+이벤트 관련 키워드까지 OCR 오류라고 간주하여 무시하지 않는다.
 
 문서의 표면 형식이 아니라
 사용자가 기억하거나 관리해야 할 핵심 이벤트를 기준으로 분류한다.
@@ -142,7 +124,8 @@ OCR에는 잘못 인식된 문자열이나 의미 없는 문자 조각이 포함
   숙소 또는 항공편의 체크인 일정
 
 - performance:
-  콘서트, 페스티벌, 공연, 전시회, 스포츠 경기 등 관람 행사
+  콘서트, 페스티벌, 공연, 전시회,
+  스포츠 경기 등 관람 행사
 
 - meeting:
   회의, 상담, 면담, 미팅
@@ -151,7 +134,7 @@ OCR에는 잘못 인식된 문자열이나 의미 없는 문자 조각이 포함
   위 유형에 속하지 않는 일반 일정
 
 - none:
-  일정이나 이벤트 정보를 찾을 수 없음
+  일정이나 관리할 이벤트 정보를 찾을 수 없음
 
 중요 규칙:
 
@@ -160,17 +143,23 @@ OCR에는 잘못 인식된 문자열이나 의미 없는 문자 조각이 포함
 
 2. 영화 예매는 reservation이다.
 
-3. 상품권의 핵심 날짜가 유효기간이면 expiration이다.
+3. 상품권, 쿠폰, 이용권과 함께
+   "유효기간", "사용기한", "만료일"이 확인되면 expiration이다.
 
-4. 버튼명, 결제 상태, 상태바, 안내 문구는
-   이벤트 유형 판단의 핵심 근거로 사용하지 않는다.
+4. 버튼명, 결제 상태, 상태바, 일반 안내 문구는
+   핵심 분류 근거에서 제외한다.
 
 5. 이미지 캡션은 OCR에서 부족한
    이미지 종류와 전체 맥락만 보완한다.
 
-6. 명확한 근거가 없으면 none을 선택한다.
+6. OCR에서 이벤트를 나타내는 명확한 핵심 단서가 존재하면
+   해당 이벤트 유형을 적극적으로 선택한다.
 
-7. JSON 객체 하나만 출력한다.
+7. none은 날짜, 예약, 일정, 만료, 시험, 공연 등
+   사용자가 관리할 이벤트를 나타내는 근거가
+   전혀 없는 경우에만 선택한다.
+
+8. JSON 객체 하나만 출력한다.
 """.strip(),
                 },
 
@@ -290,7 +279,8 @@ a mobile gift card coupon
         caption: str | None = None,
     ) -> Event:
         """
-        분류된 이벤트 유형을 바탕으로 구조화된 이벤트 정보를 추출한다.
+        분류된 이벤트 유형을 기반으로
+        구조화된 이벤트 정보를 추출한다.
         """
 
         input_context = self._build_input_context(
@@ -319,43 +309,120 @@ a mobile gift card coupon
 2. 이미지 캡션
    - 이미지의 종류와 전체적인 시각적 맥락을 판단하는
      보조 정보다.
-   - OCR에 명시되지 않은 날짜, 시간, 장소, 금액 등의
-     구체적인 정보를 캡션만 보고 추측하지 않는다.
 
-OCR 텍스트와 이미지 캡션이 충돌하면 OCR 텍스트를 우선한다.
+OCR 텍스트와 이미지 캡션이 충돌하면
+OCR 텍스트를 우선한다.
 
-필드 추출 원칙:
+이미지 캡션만으로 OCR에 없는 날짜, 시간,
+장소, 금액 등의 값을 새롭게 만들어내지 않는다.
 
-- 각 필드는 반드시 입력에서 근거를 확인할 수 있어야 한다.
-- 명확한 근거가 없으면 null로 작성한다.
-- OCR에는 잘못 인식된 문자열이 포함될 수 있다.
-- 문맥적 근거가 없는 깨진 문자열은
-  이름, 장소, 제목 등의 값으로 사용하지 않는다.
-- 동일한 OCR 값을 의미 없이 여러 metadata 필드에 중복 저장하지 않는다.
-- metadata에는 해당 이벤트에 실제로 필요한 정보만 저장한다.
+필드 추출 기본 원칙:
+
+- OCR에서 의미가 명확하게 확인되는 정보는 적극적으로 추출한다.
+
+- 필드 라벨과 값의 관계가 명확하면 해당 값을 사용한다.
+
+예:
+
+"유효기간"
+"2022년 7월 16일"
+
+→ date = "2022-07-16"
+
+"교환처"
+"GS25"
+
+→ location = "GS25"
+
+"모바일 상품권 5만원권"
+
+→ title = "모바일 상품권 5만원권"
+
+- 명확한 근거가 없는 정보만 null로 작성한다.
+
+- 정상적인 상품명, 장소명, 날짜, 시간, 금액 등을
+  OCR 노이즈라고 판단하여 무시하지 않는다.
+
+- OCR에는 일부 깨진 문자열이나 잘못 인식된 텍스트가
+  포함될 수 있다.
+
+- 다른 문맥이나 필드와 연결되지 않는
+  의미 없는 문자열만 무시한다.
+
+- 동일한 OCR 값을 의미 없이
+  여러 metadata 필드에 중복 저장하지 않는다.
+
+- metadata에는 해당 이벤트에 실제 필요한 정보만 저장한다.
+
 - 버튼명, 안내문, 결제 버튼, 상태바 텍스트는 무시한다.
-- OCR 인식 오류로 보이는 문구를 임의로 수정하거나 추측하지 않는다.
 
-날짜 및 시간 규칙:
+날짜 처리 규칙:
 
-- 날짜는 YYYY-MM-DD 형식으로 작성한다.
+- 연도, 월, 일이 모두 존재하면
+  반드시 YYYY-MM-DD 형식으로 변환한다.
+
+예:
+
+"2022년 7월 16일"
+
+→ date = "2022-07-16"
+→ metadata.raw_date = null
+
+"2025.07.05(토)"
+
+→ date = "2025-07-05"
+→ metadata.raw_date = null
+
+- 연도가 없는 날짜는 임의로 연도를 추측하지 않는다.
+
+예:
+
+"11/26"
+
+→ date = null
+→ metadata.raw_date = "11/26"
+
+- YYYY-MM-DD로 정상 변환할 수 있는 날짜를
+  metadata.raw_date에 저장하지 않는다.
+
+시간 처리 규칙:
+
 - 시간은 HH:MM 형식으로 작성한다.
 
 예:
+
+"19:55"
+→ time = "19:55"
+
 "2025.07.05(토)13:00"
+→ date = "2025-07-05"
+→ time = "13:00"
 
-→
-date = "2025-07-05"
-time = "13:00"
+금액 처리 규칙:
 
-연도가 없는 날짜:
+- OCR에 금액이 명확하게 표시되어 있으면 적극적으로 추출한다.
+
+- 쉼표와 통화 단위는 제거하고 정수로 저장한다.
 
 예:
-"11/26"
 
-→
-date = null
-metadata.raw_date = "11/26"
+"50,000원"
+→ 50000
+
+"5만원"
+→ 50000
+
+"10,000"
+→ 10000
+
+- 상품권, 쿠폰, 이용권 자체의 표시 금액은
+  metadata.amount에 저장한다.
+
+- 사용자가 실제 결제한 금액은
+  metadata.purchase_amount에 저장한다.
+
+- 영화, 공연, 교통 등 티켓의 가격은
+  metadata.ticket_amount에 저장한다.
 
 metadata 키 정의:
 
@@ -367,14 +434,20 @@ metadata 키 정의:
 
 - buyer_name:
   구매자 또는 주문자 이름
-  "구매자", "주문자", "받는 분" 등
-  이름을 나타내는 명확한 문맥이 있을 때만 사용한다.
+
+  "구매자", "주문자", "받는 분", "보낸 사람" 등
+  사람 이름임을 나타내는 명확한 라벨이나
+  문맥이 있을 때만 추출한다.
+
+  단독으로 등장하는 문자열을
+  사람 이름이라고 추측하지 않는다.
 
 - purchase_date:
   상품이나 티켓을 실제 구매한 날짜
 
 - raw_date:
-  연도 누락 등으로 표준 날짜 형식으로 변환할 수 없는 날짜 원문
+  연도 누락 등으로 YYYY-MM-DD 형식으로
+  정상 변환할 수 없는 날짜의 원문
 
 - screen:
   영화관의 상영관 번호 또는 상영관명
@@ -404,13 +477,28 @@ metadata 키 정의:
   티켓 또는 상품 수령 방법
 
 - exchange_code:
-  쿠폰 또는 상품권 교환 코드
+  쿠폰 또는 상품권의 교환 코드 또는 바코드 번호
 
 - category:
-  문서나 이벤트의 추가 카테고리
+  추가 카테고리 정보
 
 - format:
   상품권 또는 티켓의 형태
+
+  "모바일", "지류", "e-ticket", "QR 티켓" 등
+  형식을 나타내는 의미가 명확한 표현이
+  입력에서 확인되는 경우에만 저장한다.
+
+  의미를 해석할 수 없는 OCR 문자열을
+  format 값으로 사용하지 않는다.
+
+  예:
+  "S5ES"
+  "25ES"
+  "GIAMSS"
+
+  위와 같이 의미가 불분명한 문자열은
+  OCR 노이즈로 보고 무시한다.
 
 metadata에는 위에서 정의한 키만 사용한다.
 
@@ -442,7 +530,7 @@ reservation:
   예약 또는 관람 날짜와 시간
 
 - end_time:
-  종료 시간이 명시된 경우 저장
+  종료 시간이 명시되어 있으면 저장한다.
 
 - location:
   극장, 병원, 식당, 숙소
@@ -456,21 +544,37 @@ reservation:
 expiration:
 
 - title:
-  상품권, 쿠폰, 이용권 이름
+  상품권, 쿠폰, 이용권의 이름
 
 - date:
-  유효기간 또는 만료일
+  "유효기간", "사용기한", "만료일"에 해당하는 날짜
 
 - location:
-  교환처 또는 사용처
+  "교환처", "사용처"에 해당하는 장소 또는 브랜드
 
-- metadata:
-  order_number
-  exchange_code
-  amount
+- metadata.order_number:
+  "주문번호"에 해당하는 값
 
-- 상품권 또는 쿠폰의 표시 금액은 amount를 사용한다.
+- metadata.exchange_code:
+  교환 코드 또는 바코드 번호
+
+- metadata.amount:
+  상품권 또는 쿠폰 자체의 표시 금액
+
+금액 예:
+
+"50,000원"
+→ metadata.amount = 50000
+
+"5만원"
+→ metadata.amount = 50000
+
+- 상품권 자체의 금액에는 amount를 사용한다.
 - ticket_amount는 사용하지 않는다.
+
+- "모바일 상품권", "모바일 쿠폰"처럼
+  상품권의 형태가 명확한 경우
+  metadata.format = "모바일"로 저장할 수 있다.
 
 exam:
 
@@ -492,7 +596,7 @@ assignment_due:
   제출 마감 일시
 
 - location:
-  제출 위치가 명시된 경우만 저장
+  제출 위치가 명시된 경우에만 저장한다.
 
 departure:
 
@@ -506,7 +610,8 @@ departure:
   출발 장소
 
 - metadata:
-  reservation_number 등 명확하게 확인되는 정보만 저장
+  reservation_number 등
+  명확하게 확인되는 정보만 저장한다.
 
 check_in:
 
@@ -520,7 +625,8 @@ check_in:
   숙소 또는 공항
 
 - metadata:
-  reservation_number 등 명확하게 확인되는 정보만 저장
+  reservation_number 등
+  명확하게 확인되는 정보만 저장한다.
 
 meeting:
 
@@ -546,13 +652,14 @@ schedule:
 
 none:
 
-- 일정이나 이벤트가 없으므로 알 수 없는 필드는 null로 작성한다.
-- metadata는 빈 객체로 작성한다.
+- 일정이나 이벤트가 없는 경우다.
+- title, date, time, end_time, location은 null로 작성한다.
+- metadata에는 이벤트와 관련 없는 정보를 저장하지 않는다.
 
 중요:
 
-- search_text는 생성하지 않아도 된다.
-- search_text는 이후 프로그램에서 별도로 생성한다.
+- search_text는 모델이 작성할 필요가 없다.
+- search_text는 프로그램에서 별도로 생성한다.
 - JSON 객체 하나만 출력한다.
 """.strip(),
                 },
@@ -587,16 +694,16 @@ none:
                 f"원본 응답:\n{raw_content}"
             ) from error
 
-        # 분류 단계에서 결정한 이벤트 유형을 강제로 유지한다.
+        # 분류 단계에서 결정한 이벤트 유형을 유지한다.
         parsed_data["type"] = event_type
 
+        # metadata가 비정상적으로 반환된 경우 빈 객체로 보정한다.
         metadata = parsed_data.get("metadata")
 
         if not isinstance(metadata, dict):
             parsed_data["metadata"] = {}
 
-        # LLM이 생성한 search_text는 사용하지 않는다.
-        # Event validation을 위해 임시값을 넣는다.
+        # search_text는 Qwen이 아닌 postprocess.py에서 생성한다.
         parsed_data["search_text"] = ""
 
         try:
@@ -608,10 +715,11 @@ none:
                 f"검증 오류:\n{error}"
             ) from error
 
-        # 구조화된 필드를 기반으로 search_text를 결정론적으로 생성한다.
-        event.search_text = self._build_search_text(event)
-
-        return event
+        # 규칙 기반 후처리
+        return postprocess_event(
+            event=event,
+            ocr_text=ocr_text,
+        )
 
     def process(
         self,
@@ -619,7 +727,8 @@ none:
         caption: str | None = None,
     ) -> Event:
         """
-        이벤트 유형 분류 후 구조화 정보 추출까지 순서대로 실행한다.
+        이벤트 유형 분류 후
+        구조화 정보 추출까지 순서대로 실행한다.
         """
 
         event_type = self.classify_event_type(
