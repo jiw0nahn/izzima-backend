@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.routers import events, images
+from app.routers import events, images, search
 
 app = FastAPI(
     title="졸크크 AI 갤러리 백엔드",
@@ -10,6 +10,7 @@ app = FastAPI(
 
 app.include_router(images.router)
 app.include_router(events.router)
+app.include_router(search.router)
 
 
 @app.get("/")
