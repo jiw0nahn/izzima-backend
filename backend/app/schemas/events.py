@@ -1,0 +1,34 @@
+"""
+app/schemas/events.py
+
+이벤트 조회 응답 Pydantic 모델. events 테이블 컬럼(app/crud/events_crud.py::
+create_event의 payload 키)과 1:1 대응한다. 쓰기는 images 라우터의 업로드/삭제
+흐름에 붙어 있어 여기는 응답 모델만 둔다.
+"""
+
+from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class EventResponse(BaseModel):
+    id: str
+    image_id: str = Field(..., description="이 이벤트가 추출된 원본 이미지의 id.")
+    event_type: str = Field(
+        ...,
+        description=(
+            "이벤트 종류. Qwen 구조화 추출 결과 그대로 - expiration/exam/"
+            "assignment_due/reservation/departure/check_in/performance/"
+            "meeting/schedule 중 하나 (\"none\"은 저장되지 않으므로 나오지 않음)."
+        ),
+    )
+    title: Optional[str] = None
+    event_date: Optional[str] = Field(None, description="YYYY-MM-DD, 없으면 null.")
+    event_time: Optional[str] = Field(None, description="HH:MM, 없으면 null.")
+    location: Optional[str] = None
+    created_at: datetime
+
+
+class EventListResponse(BaseModel):
+    data: List[EventResponse]
