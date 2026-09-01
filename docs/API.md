@@ -183,18 +183,19 @@ AI Pipeline(Qwen)이 잘못 분류했을 때 사용자가 직접 보정하는 �
 
 ## `GET /events` — 요청자 전체 이벤트 목록 (D-day 추천 카드용)
 
-- Query params: 없음
+- Query params:
+  - `upcoming` (bool, 기본값 `false`) — `true`면 지난 이벤트와 `event_date`가 없는 이벤트를 제외하고 앞으로 다가올 이벤트만 반환 (D-day 카드 후보만 걸러줌). `false`(기본값)는 기존과 동일하게 전부 반환.
 - Response: `200 OK`
 
 ```json
 {
-  "data": [ /* EventResponse[], event_date 오름차순(가까운 D-day가 먼저). 날짜 없는 이벤트는 뒤로 밀림 */ ]
+  "data": [ /* EventResponse[], event_date 오름차순(가까운 D-day가 먼저). upcoming=false일 때는 날짜 없는 이벤트도 뒤로 밀려 포함됨 */ ]
 }
 ```
 
 주의:
 - 페이지네이션 없음 — 사용자당 이벤트 수가 적다고 보고 전체를 한 번에 반환합니다. 늘어나면 바뀔 수 있습니다.
-- 추천 카드 노출 개수/지난 이벤트 숨김 같은 정책은 이 API의 책임이 아니라 호출부(프론트 또는 별도 추천 로직)가 정합니다.
+- D-day 숫자 계산(오늘부터 며칠 남았는지)은 이 API의 책임이 아닙니다 — `event_date`만 내려주고 프론트가 계산합니다. 추천 카드 노출 개수 제한도 프론트 책임입니다. `upcoming=true`는 "카드 후보가 될 수 있는지"만 걸러줍니다.
 - AI Pipeline의 Qwen 연동이 아직 막혀 있어 지금은 항상 `data: []`가 내려옵니다.
 
 ---

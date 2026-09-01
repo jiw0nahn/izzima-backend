@@ -5,7 +5,7 @@ app/routers/events.py
 라우터의 업로드/삭제 흐름에 붙어 있다 (app/routers/images.py).
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.security import get_current_user_id
 from app.crud import events_crud, images_crud
@@ -39,18 +39,29 @@ def get_events_for_image(image_id: str, user_id: str = Depends(get_current_user_
     response_model=EventListResponse,
     summary="요청자 전체 이벤트 목록 (D-day 추천 카드용)",
 )
-def list_events(user_id: str = Depends(get_current_user_id)):
+def list_events(
+    upcoming: bool = Query(
+        False,
+        description=(
+            "true면 지난 이벤트와 event_date가 없는 이벤트를 제외하고 앞으로 "
+            "다가올 이벤트만 반환한다 (D-day 추천 카드용). 기본값 false는 지금까지 "
+            "동작 그대로 전부 반환 - 지난 이벤트도 이 파라미터 없이 조회하면 그대로 남아있다."
+        ),
+    ),
+    user_id: str = Depends(get_current_user_id),
+):
     """
-    요청자 소유 이미지에 딸린 이벤트를 전부 event_date 오름차순(가까운 D-day가
+    요청자 소유 이미지에 딸린 이벤트를 event_date 오름차순(가까운 D-day가
     먼저)으로 반환한다. 날짜가 없는 이벤트는 정렬상 뒤로 밀린다.
 
-    추천 카드에 몇 개를 보여줄지, 지난 이벤트를 숨길지 같은 추천 정책은 여기서
-    다루지 않는다 - 이 엔드포인트는 순수 조회이고, 정책은 프론트 또는 별도
-    추천 로직의 영역.
+    D-day 계산(오늘부터 며칠 남았는지) 자체는 프론트 책임 - 여기서는 event_date만
+    내려준다. 추천 카드에 몇 개를 보여줄지 같은 개수 제한 정책도 여기서 다루지
+    않는다 - upcoming=true는 "카드 후보가 될 수 있는지"만 걸러줄 뿐, 몇 개를
+    보여줄지는 프론트가 결정한다.
 
     지금 단계에서는 사용자당 이미지/이벤트 수가 적다고 보고 페이지네이션 없이
     전체를 반환한다 - 늘어나면 커서 기반으로 바꿔야 할 수 있음.
     """
     image_ids = images_crud.list_all_image_ids(user_id)
-    events = events_crud.list_events_by_images(image_ids)
+    events = events_crud.list_events_by_images(image_ids, upcoming=upcoming)
     return EventListResponse(data=[EventResponse(**event) for event in events])
