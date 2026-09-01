@@ -61,3 +61,33 @@ def delete_embedding_by_image(image_id: str) -> None:
             status_code=502,
             detail=f"임베딩 삭제에 실패했습니다: {str(e)}",
         )
+
+
+def search_similar_images(
+    user_id: str, query_embedding: list[float], limit: int = 20
+) -> list[dict]:
+    """
+    query_embedding과 코사인 유사도가 가까운 순으로 요청자 소유 이미지의
+    image_id/similarity를 반환한다 ([{"image_id": ..., "similarity": ...}, ...]).
+
+    image_embeddings에는 user_id 컬럼이 없고, postgrest 클라이언트로는 pgvector
+    거리 연산(`<=>`)과 images 테이블 join을 동시에 표현할 수 없어서, Supabase에
+    미리 만들어둔 `match_images` Postgres 함수를 rpc로 호출한다.
+    """
+    supabase = get_supabase_client()
+    try:
+        response = supabase.rpc(
+            "match_images",
+            {
+                "query_embedding": query_embedding,
+                "match_user_id": user_id,
+                "match_count": limit,
+            },
+        ).execute()
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"유사 이미지 검색에 실패했습니다: {str(e)}",
+        )
+
+    return response.data

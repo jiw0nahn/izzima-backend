@@ -199,9 +199,38 @@ AI Pipeline(Qwen)이 잘못 분류했을 때 사용자가 직접 보정하는 �
 
 ---
 
+## `GET /search` — 자연어 이미지 검색
+
+검색어를 KURE-v1으로 임베딩해, 업로드 시 저장해둔 `image_embeddings`와 pgvector
+코사인 유사도로 비교한 뒤 가까운 순으로 이미지를 반환합니다.
+
+- Query params:
+  - `q` (string, 필수) — 검색어(자연어)
+  - `limit` (int, 1~100, 기본 20)
+- Response: `200 OK`
+
+```json
+{
+  "data": [ /* (ImageResponse 필드 전체) + similarity(float, 1에 가까울수록 유사) */ ]
+}
+```
+
+에러:
+- `503` — 임베딩 모델(KURE-v1)이 아직 연동되지 않아 검색 자체를 수행할 수 없음.
+  빈 결과(`data: []`)와 구분하기 위해 일부러 에러로 응답합니다.
+- `502` — Supabase 쪽 유사도 검색(rpc) 호출 실패
+
+주의: **이 문서 작성 시점 기준 KURE-v1이 아직 연동되지 않아 항상 503이 내려갑니다.**
+API 계약(요청/응답 형태)만 먼저 확정해둔 상태이고, 실제 검색 결과는 모델 연동 후
+동작합니다.
+
+---
+
 ## 아직 없는 것 (프론트에서 기대하면 안 되는 기능)
 
 - 카테고리 폴더 UI에 쓸 수 있는 실제 `category` 값
-- 자연어 검색 API (`search_text`/pgvector 기반) — `embeddings_crud`는 구현됐지만 `embedding_service`(KURE-v1 호출)가 아직 스텁
+- 자연어 검색 API의 실제 동작 — 엔드포인트(`GET /search`)와 저장/조회 로직은
+  구현됐지만, `ai/src`에 KURE-v1 임베딩 모듈 자체가 아직 없어 `embedding_service`가
+  항상 빈 값을 반환 → 지금은 검색 호출 시 항상 503
 - 실제 이벤트 데이터 — `events_crud`/`/events` API 자체는 구현됐지만, GPU 서버의 Qwen(Ollama)이 응답하지 않아 이벤트가 생성되지 않음
 - 이미지 태그(`image_tags`) 관련 API — 테이블 자체가 아직 crud/router 없음

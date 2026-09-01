@@ -7,9 +7,10 @@ app/routers/images.py
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.core.security import get_current_user_id
-from app.crud import events_crud, images_crud
+from app.crud import embeddings_crud, events_crud, images_crud
 from app.schemas.images import CategoryUpdateRequest, ImageListResponse, ImageResponse
 from app.services.ai_pipeline_service import run_ai_pipeline
+from app.services.embedding_service import generate_embedding
 from app.services.storage_service import (
     delete_image_from_storage,
     get_signed_url,
@@ -37,13 +38,13 @@ async def upload_image(
     AI Pipeline(OCR/캡션/카테고리/search_text/이벤트)을 호출해 결과를 함께 저장한다.
     다만 GPU 서버의 Ollama(Qwen 구조화 추출이 의존)가 아직 응답하지 않는 상태라
     run_ai_pipeline()이 현재는 항상 빈 값을 반환한다 - 그쪽이 복구되면 이 라우트는
-    그대로 두고 run_ai_pipeline() 내부만 정상 동작하면 됨. KURE-v1 임베딩
-    (image_embeddings 테이블)은 별도 embedding_service의 책임이라 여기서 다루지
-    않는다.
+    그대로 두고 run_ai_pipeline() 내부만 정상 동작하면 됨.
 
     pipeline_result["event"].type이 "none"이 아니면 events 테이블에도 레코드를
-    생성한다. 이벤트 저장 실패는 이미지 업로드 자체를 막지 않는다 (부가 정보라
-    실패해도 로그만 남기고 넘어감).
+    생성한다. search_text가 있으면 embedding_service로 임베딩을 만들어
+    image_embeddings에도 저장한다(KURE-v1 미연동 상태라 지금은 embedding_service가
+    항상 None을 반환해 건너뛰어짐). 이벤트/임베딩 저장 실패는 이미지 업로드
+    자체를 막지 않는다 (부가 정보라 실패해도 로그만 남기고 넘어감).
     """
     upload_result = await upload_image_to_storage(file)
     storage_path = upload_result["storage_path"]
@@ -78,6 +79,15 @@ async def upload_image(
             )
         except HTTPException as e:
             print(f"[images router] 이벤트 저장 실패: {e.detail}")
+
+    search_text = pipeline_result["search_text"]
+    if search_text:
+        embedding = generate_embedding(search_text)
+        if embedding is not None:
+            try:
+                embeddings_crud.create_embedding(image["id"], embedding)
+            except HTTPException as e:
+                print(f"[images router] 임베딩 저장 실패: {e.detail}")
 
     return ImageResponse(**image, signed_url=get_signed_url(storage_path))
 
@@ -136,17 +146,17 @@ def delete_image(image_id: str, user_id: str = Depends(get_current_user_id)):
     """
     이미지 레코드와 Storage 파일을 함께 삭제한다.
 
-    events 테이블이 image_id로 images를 참조하는 FK를 가지고 있어(cascade 미설정),
-    이미지 레코드를 지우기 전에 딸린 이벤트부터 먼저 정리한다. 소유권 확인도
-    이벤트를 지우기 전에 끝내야, 존재하지 않거나 남의 이미지 id로 이벤트만
-    지워지는 일이 없다. 그 다음 이미지 레코드를 삭제하고(source of truth), 마지막
-    으로 Storage 파일 삭제를 시도한다. Storage 삭제는 delete_image_from_storage
-    내부에서 실패를 조용히 무시하므로(이미 없는 파일일 수 있음) 이 라우트를 막지는
-    않지만, 그만큼 고아 파일이 남을 가능성은 있음. 지금 단계에서는 별도 정리
-    배치가 없다.
+    events/image_embeddings 테이블이 image_id로 images를 참조하는 FK를 가지고
+    있어(cascade 미설정), 이미지 레코드를 지우기 전에 딸린 이벤트/임베딩부터
+    먼저 정리한다. 소유권 확인도 그 전에 끝내야, 존재하지 않거나 남의 이미지
+    id로 이벤트/임베딩만 지워지는 일이 없다. 그 다음 이미지 레코드를
+    삭제하고(source of truth), 마지막으로 Storage 파일 삭제를 시도한다. Storage
+    삭제는 delete_image_from_storage 내부에서 실패를 조용히 무시하므로(이미
+    없는 파일일 수 있음) 이 라우트를 막지는 않지만, 그만큼 고아 파일이 남을
+    가능성은 있음. 지금 단계에서는 별도 정리 배치가 없다.
 
-    image_tags/image_embeddings 등 images를 참조할 다른 테이블은 아직 여기서
-    함께 정리하지 않는다.
+    image_tags 등 images를 참조할 다른 테이블은 아직 여기서 함께 정리하지 않는다
+    (테이블 자체가 아직 crud/router 없음).
 
     요청자 소유가 아닌 이미지는 404로 응답한다 (존재 여부 비노출).
     """
@@ -154,6 +164,7 @@ def delete_image(image_id: str, user_id: str = Depends(get_current_user_id)):
         raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.")
 
     events_crud.delete_events_by_image(image_id)
+    embeddings_crud.delete_embedding_by_image(image_id)
 
     image = images_crud.delete_image(image_id, user_id)
     if image is None:
