@@ -1,6 +1,5 @@
 import json
 import os
-
 from typing import Literal
 
 from ollama import chat
@@ -356,6 +355,7 @@ OCR 텍스트를 우선한다.
 
 - 버튼명, 안내문, 결제 버튼, 상태바 텍스트는 무시한다.
 
+
 날짜 처리 규칙:
 
 - 연도, 월, 일이 모두 존재하면
@@ -373,17 +373,47 @@ OCR 텍스트를 우선한다.
 → date = "2025-07-05"
 → metadata.raw_date = null
 
-- 연도가 없는 날짜는 임의로 연도를 추측하지 않는다.
+- 핵심 이벤트 날짜에 연도가 직접 표시되지 않은 경우
+  근거 없이 연도를 추측해서 넣지 않는다.
+
+- 현재 연도, 시스템 날짜, 일반적인 관행만으로
+  누락된 연도를 보완하지 않는다.
 
 예:
+
+"상영일"
+"11.07"
+
+→ date = null
+→ metadata.raw_date = "11.07"
 
 "11/26"
 
 → date = null
 → metadata.raw_date = "11/26"
 
+- 단, OCR의 다른 위치에
+  해당 월/일과 명확하게 대응되는 연도 정보가 존재하면
+  그 연도를 사용할 수 있다.
+
+예:
+
+"판매번호"
+"2026-0307-5348-0221"
+
+"상영일"
+"03/07"
+
+→ 두 정보가 동일한 03/07을 명확하게 가리키는 경우
+   date = "2026-03-07"
+   metadata.raw_date = null
+
+- 서로 관련이 없는 숫자나 문자열의 연도를
+  날짜에 억지로 결합하지 않는다.
+
 - YYYY-MM-DD로 정상 변환할 수 있는 날짜를
   metadata.raw_date에 저장하지 않는다.
+
 
 시간 처리 규칙:
 
@@ -397,6 +427,17 @@ OCR 텍스트를 우선한다.
 "2025.07.05(토)13:00"
 → date = "2025-07-05"
 → time = "13:00"
+
+- 종료 시간이 명시되어 있으면 end_time에 저장한다.
+
+예:
+
+"19:45"
+"~21:30"
+
+→ time = "19:45"
+→ end_time = "21:30"
+
 
 금액 처리 규칙:
 
@@ -421,86 +462,138 @@ OCR 텍스트를 우선한다.
 - 사용자가 실제 결제한 금액은
   metadata.purchase_amount에 저장한다.
 
-- 영화, 공연, 교통 등 티켓의 가격은
+- 영화, 공연, 교통 등 티켓 자체의 가격은
   metadata.ticket_amount에 저장한다.
+
+예:
+
+"구매금액"
+"145,000원"
+
+→ metadata.purchase_amount = 145000
+
+"티켓금액"
+"143,000원"
+
+→ metadata.ticket_amount = 143000
+
 
 metadata 키 정의:
 
 - reservation_number:
   예약 또는 예매 번호
 
+  "예매번호", "예약번호", "판매번호" 등
+  예약이나 예매를 식별하는 번호를 저장한다.
+
 - order_number:
   상품 주문 번호
 
+  "주문번호" 라벨에 해당하는 값을 저장한다.
+
 - buyer_name:
-  구매자 또는 주문자 이름
+  구매자, 주문자 또는 예매자 이름
 
-  "구매자", "주문자", "받는 분", "보낸 사람" 등
-  사람 이름임을 나타내는 명확한 라벨이나
-  문맥이 있을 때만 추출한다.
+  "구매자", "주문자", "예매자", "예매자명",
+  "받는 분", "보낸 사람" 등
+  사람 이름임을 나타내는 명확한 라벨이 있을 때 추출한다.
 
-  단독으로 등장하는 문자열을
-  사람 이름이라고 추측하지 않는다.
+  단독으로 등장하는 사람 이름처럼 보이는 문자열은
+  buyer_name으로 추측하지 않는다.
 
 - purchase_date:
-  상품이나 티켓을 실제 구매한 날짜
+  상품, 티켓, 예약을 구매하거나 예매한 날짜
+
+  "구매일", "결제일", "예매일" 등
+  구매 또는 예매 시점을 나타내는 날짜를 저장한다.
+
+  실제 관람일, 공연일, 상영일과 혼동하지 않는다.
 
 - raw_date:
   연도 누락 등으로 YYYY-MM-DD 형식으로
-  정상 변환할 수 없는 날짜의 원문
+  정상 변환할 수 없는 핵심 이벤트 날짜의 원문
+
+- cancellation_deadline:
+  취소 또는 환불 가능 마감 일시
+
+  "취소마감", "취소마감일", "취소마감일시",
+  "환불마감" 등의 라벨이 있으면 적극적으로 추출한다.
 
 - screen:
   영화관의 상영관 번호 또는 상영관명
 
 - seats:
-  좌석 정보
+  실제 좌석 번호 또는 좌석명
+
+  "H7", "G6", "113", "A열 5번"처럼
+  실제 좌석을 나타내는 값만 저장한다.
+
+  "일반 1명", "성인 1명", "청소년 2명",
+  "일반1", "성인1" 등은 인원 정보이며
+  seats에 저장하지 않는다.
 
 - quantity:
-  매수 또는 수량
+  매수 또는 인원수
+
+  "1매", "2매", "성인 1명", "일반 1명",
+  "청소년 2명", "일반1", "성인1" 등에서
+  수량만 정수로 저장한다.
 
 - amount:
   쿠폰, 상품권, 이용권 자체의 표시 금액 또는 가치
 
 - purchase_amount:
-  사용자가 실제 결제한 금액
+  사용자가 실제 결제한 총 금액
+
+  "구매금액", "결제금액", "총 결제금액" 등
+  실제 결제 금액임을 나타내는 라벨이 있으면 추출한다.
 
 - ticket_amount:
-  영화, 공연, 교통 등 티켓의 가격
+  영화, 공연, 교통 등 티켓 자체의 금액
 
-- cancellation_deadline:
-  취소 또는 환불 가능 마감 시각
+  "티켓금액", "티켓가격" 등의 값을 저장한다.
 
 - status:
-  예약, 주문, 티켓 등의 상태
+  예약, 주문, 티켓 등의 현재 상태
+
+  "상태", "예매상태", "주문상태" 등의 라벨에
+  직접 연결된 값을 저장한다.
 
 - receive_method:
   티켓 또는 상품 수령 방법
+
+  "수령방법", "티켓수령 방법" 등의 값을 저장한다.
 
 - exchange_code:
   쿠폰 또는 상품권의 교환 코드 또는 바코드 번호
 
 - category:
-  추가 카테고리 정보
+  이벤트의 의미가 명확할 때만
+  추가 카테고리 정보를 저장한다.
+
+  OCR 오류로 보이는 문자열이나
+  단순 브랜드 문구를 억지로 category로 만들지 않는다.
 
 - format:
   상품권 또는 티켓의 형태
 
-  "모바일", "지류", "e-ticket", "QR 티켓" 등
-  형식을 나타내는 의미가 명확한 표현이
-  입력에서 확인되는 경우에만 저장한다.
+  "모바일", "지류", "e-ticket", "QR 티켓", "2D" 등
+  실제 형식이나 티켓 형태를 나타내는 의미가
+  입력에서 명확하게 확인되는 경우에만 저장한다.
 
-  의미를 해석할 수 없는 OCR 문자열을
-  format 값으로 사용하지 않는다.
+  의미를 해석할 수 없는 OCR 문자열은 저장하지 않는다.
 
-  예:
-  "S5ES"
-  "25ES"
-  "GIAMSS"
+예:
 
-  위와 같이 의미가 불분명한 문자열은
-  OCR 노이즈로 보고 무시한다.
+"S5ES"
+"25ES"
+"GIAMSS"
+
+→ format = null
+
 
 metadata에는 위에서 정의한 키만 사용한다.
+
 
 유형별 추출 기준:
 
@@ -516,30 +609,62 @@ performance:
   공연장소
 
 - metadata:
+  OCR에 명확하게 존재하면 다음 정보를 추출한다.
+
   reservation_number
+  buyer_name
+  purchase_date
+  cancellation_deadline
+  seats
   quantity
+  purchase_amount
   ticket_amount
+  status
   receive_method
+  category
+  format
+
 
 reservation:
 
 - title:
-  영화명, 병원명, 식당명, 숙소명 등 예약 대상
+  영화명, 병원명, 식당명, 숙소명 등 실제 예약 대상
+
+  서비스 이름이나 UI 헤더보다
+  실제 예약 대상을 우선한다.
+
+  실제 예약 대상명이 OCR에 없다면
+  "MEGABOX TICKET", "모바일 티켓", "예매내역"처럼
+  서비스명이나 일반적인 티켓 문구를
+  억지로 title로 사용하지 않는다.
 
 - date/time:
-  예약 또는 관람 날짜와 시간
+  실제 예약 또는 관람 날짜와 시간
 
 - end_time:
   종료 시간이 명시되어 있으면 저장한다.
 
 - location:
-  극장, 병원, 식당, 숙소
+  극장, 병원, 식당, 숙소 등
+  실제 예약이 이루어지는 장소
 
 - metadata:
+  OCR에 명확하게 존재하면 다음 정보를 추출한다.
+
   reservation_number
+  buyer_name
+  purchase_date
+  cancellation_deadline
   screen
   seats
+  quantity
+  purchase_amount
   ticket_amount
+  status
+  receive_method
+  category
+  format
+
 
 expiration:
 
@@ -576,6 +701,7 @@ expiration:
   상품권의 형태가 명확한 경우
   metadata.format = "모바일"로 저장할 수 있다.
 
+
 exam:
 
 - title:
@@ -587,6 +713,10 @@ exam:
 - location:
   시험 장소 또는 강의실
 
+- metadata:
+  OCR에 명확하게 존재하는 정보만 저장한다.
+
+
 assignment_due:
 
 - title:
@@ -597,6 +727,10 @@ assignment_due:
 
 - location:
   제출 위치가 명시된 경우에만 저장한다.
+
+- metadata:
+  OCR에 명확하게 존재하는 정보만 저장한다.
+
 
 departure:
 
@@ -611,7 +745,8 @@ departure:
 
 - metadata:
   reservation_number 등
-  명확하게 확인되는 정보만 저장한다.
+  OCR에서 명확하게 확인되는 정보만 저장한다.
+
 
 check_in:
 
@@ -626,7 +761,8 @@ check_in:
 
 - metadata:
   reservation_number 등
-  명확하게 확인되는 정보만 저장한다.
+  OCR에서 명확하게 확인되는 정보만 저장한다.
+
 
 meeting:
 
@@ -639,6 +775,10 @@ meeting:
 - location:
   회의 장소
 
+- metadata:
+  OCR에 명확하게 존재하는 정보만 저장한다.
+
+
 schedule:
 
 - title:
@@ -650,11 +790,16 @@ schedule:
 - location:
   일정 장소
 
+- metadata:
+  OCR에 명확하게 존재하는 정보만 저장한다.
+
+
 none:
 
 - 일정이나 이벤트가 없는 경우다.
 - title, date, time, end_time, location은 null로 작성한다.
 - metadata에는 이벤트와 관련 없는 정보를 저장하지 않는다.
+
 
 중요:
 
@@ -694,16 +839,16 @@ none:
                 f"원본 응답:\n{raw_content}"
             ) from error
 
-        # 분류 단계에서 결정한 이벤트 유형을 유지한다.
+        # 분류 단계에서 결정한 type은 변경하지 못하도록 강제한다.
         parsed_data["type"] = event_type
 
-        # metadata가 비정상적으로 반환된 경우 빈 객체로 보정한다.
         metadata = parsed_data.get("metadata")
 
         if not isinstance(metadata, dict):
             parsed_data["metadata"] = {}
 
-        # search_text는 Qwen이 아닌 postprocess.py에서 생성한다.
+        # search_text는 LLM에게 맡기지 않고
+        # postprocess 단계에서 직접 만든다.
         parsed_data["search_text"] = ""
 
         try:
@@ -715,7 +860,6 @@ none:
                 f"검증 오류:\n{error}"
             ) from error
 
-        # 규칙 기반 후처리
         return postprocess_event(
             event=event,
             ocr_text=ocr_text,
