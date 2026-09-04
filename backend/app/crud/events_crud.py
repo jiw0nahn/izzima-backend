@@ -58,6 +58,38 @@ def create_event(
     return response.data[0]
 
 
+def get_event(event_id: str) -> Optional[dict]:
+    """
+    id로 이벤트 레코드 하나를 조회한다. 소유권 검증은 하지 않으므로, 호출부가
+    반환된 image_id로 images_crud.get_image를 거쳐 소유권을 확인해야 한다.
+    """
+    supabase = get_supabase_client()
+    response = supabase.table("events").select("*").eq("id", event_id).execute()
+    return response.data[0] if response.data else None
+
+
+def update_event_used(event_id: str, is_used: bool) -> Optional[dict]:
+    """
+    이벤트의 is_used(사용 완료 여부)를 수정한다. 대상 id가 없으면 None
+    (라우터에서 404 처리). 소유권 확인은 호출부 책임(get_event와 마찬가지)
+    """
+    supabase = get_supabase_client()
+    try:
+        response = (
+            supabase.table("events")
+            .update({"is_used": is_used})
+            .eq("id", event_id)
+            .execute()
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"사용 완료 여부 변경에 실패했습니다: {str(e)}",
+        )
+
+    return response.data[0] if response.data else None
+
+
 def get_events_by_image(image_id: str) -> list[dict]:
     """이미지 하나에 딸린 이벤트 레코드를 전부 조회한다."""
     supabase = get_supabase_client()
