@@ -5,11 +5,6 @@ KURE-v1 임베딩 모델 호출 서비스 경계. app/services/ai_pipeline_servi
 패턴 - HTTP가 아니라 monorepo의 형제 패키지 `ai/src/`를 sys.path에 얹고 bare
 import로 함수를 호출한다.
 
-주의 (2026-08-28 작성 시점): ai/src에는 아직 임베딩 모듈이 없다. ai/__pycache__에
-예전 구조(ai/embedding.py, ai/src로 재구성되기 전)의 컴파일 흔적만 남아있고
-ai/src 쪽에는 재구현되지 않은 상태 - 즉 GPU 서버 Ollama 이슈(Qwen 전용)와는
-별개로, 애초에 문진서 쪽에서 KURE-v1 연동 자체를 아직 안 만들었다.
-
 아래 import(`from embedding import embed_text`)는 ai/src의 다른 모듈 이름
 규칙(ocr.py/blip.py/qwen.py)에 맞춰 "추정"해서 짜둔 것이고, 실제 파일명/함수
 시그니처는 다를 수 있다. ai/src/embedding.py가 생기면 이 파일의 import 문과
