@@ -1,15 +1,16 @@
 """
 app/routers/events.py
 
-이벤트(만료/시험/예약 등) 조회 라우트. 쓰기는 없음 - 생성/삭제는 images
-라우터의 업로드/삭제 흐름에 붙어 있다 (app/routers/images.py).
+이벤트(만료/시험/예약 등) 조회 라우트. 생성/삭제는 images 라우터의
+업로드/삭제 흐름에 붙어 있다 (app/routers/images.py) - 여기는 조회와
+is_used(사용 완료 여부) 수정만 다룬다.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.security import get_current_user_id
 from app.crud import events_crud, images_crud
-from app.schemas.events import EventListResponse, EventResponse
+from app.schemas.events import EventListResponse, EventResponse, EventUsedUpdateRequest
 
 router = APIRouter(tags=["events"])
 
@@ -65,3 +66,35 @@ def list_events(
     image_ids = images_crud.list_all_image_ids(user_id)
     events = events_crud.list_events_by_images(image_ids, upcoming=upcoming)
     return EventListResponse(data=[EventResponse(**event) for event in events])
+
+
+@router.patch(
+    "/events/{event_id}/used",
+    response_model=EventResponse,
+    summary="이벤트 사용 완료 여부 수정",
+)
+def update_event_used(
+    event_id: str,
+    body: EventUsedUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    쿠폰/티켓/예약처럼 마감일이 있는 이벤트를 사용자가 상세 화면에서 버튼으로
+    "사용 완료"로 표시(또는 해제)할 수 있게 한다. 이벤트가 없는 이미지(영수증/
+    사진/문서 등)는 애초에 이벤트 레코드 자체가 없어 이 엔드포인트의 대상이
+    아니다.
+
+    events 테이블에 user_id 컬럼이 없어(app/crud/events_crud.py 상단 docstring
+    참고) event_id로 이벤트를 먼저 찾은 다음 그 image_id로 images_crud.get_image를
+    거쳐 소유권을 확인한다. 이벤트가 없거나 요청자 소유 이미지가 아니면 404로
+    응답한다 (존재 여부 비노출).
+    """
+    event = events_crud.get_event(event_id)
+    if event is None or images_crud.get_image(event["image_id"], user_id) is None:
+        raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
+
+    updated = events_crud.update_event_used(event_id, body.is_used)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="이벤트를 찾을 수 없습니다.")
+
+    return EventResponse(**updated)
