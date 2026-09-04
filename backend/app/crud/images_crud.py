@@ -147,3 +147,19 @@ def list_all_image_ids(user_id: str) -> list[str]:
     supabase = get_supabase_client()
     response = supabase.table("images").select("id").eq("user_id", user_id).execute()
     return [row["id"] for row in response.data]
+
+
+def get_images_by_ids(image_ids: list[str]) -> dict[str, dict]:
+    """
+    id 목록으로 이미지 레코드를 조회해 {id: row} dict로 반환한다.
+
+    호출부(app/routers/search.py)가 이미 embeddings_crud.search_similar_images로
+    소유권 필터링과 유사도 순 정렬을 끝낸 상태라고 가정한다 - 이 함수 자체는
+    순서를 보장하지 않으므로, 호출부가 매치 순서대로 dict에서 꺼내 써야 한다.
+    """
+    if not image_ids:
+        return {}
+
+    supabase = get_supabase_client()
+    response = supabase.table("images").select("*").in_("id", image_ids).execute()
+    return {row["id"]: row for row in response.data}
