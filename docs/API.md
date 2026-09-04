@@ -45,6 +45,7 @@ GPU 서버 쪽 Qwen 연동이 막혀 있어 **실제로는 항상 빈 목록**�
 | `event_date` | string \| null | `YYYY-MM-DD` |
 | `event_time` | string \| null | `HH:MM` |
 | `location` | string \| null | |
+| `is_used` | boolean | 사용자가 상세 화면에서 "사용 완료"로 표시했는지 여부. 기본 `false`, `PATCH /events/{event_id}/used`로 수정. 만료 여부는 별도 필드 없이 `event_date`로 프론트에서 계산할 것. |
 | `created_at` | string (ISO 8601 datetime) | 생성 시각 |
 
 ### 에러 응답
@@ -196,6 +197,30 @@ AI Pipeline(Qwen)이 잘못 분류했을 때 사용자가 직접 보정하는 �
 - 페이지네이션 없음 — 사용자당 이벤트 수가 적다고 보고 전체를 한 번에 반환합니다. 늘어나면 바뀔 수 있습니다.
 - 추천 카드 노출 개수/지난 이벤트 숨김 같은 정책은 이 API의 책임이 아니라 호출부(프론트 또는 별도 추천 로직)가 정합니다.
 - AI Pipeline의 Qwen 연동이 아직 막혀 있어 지금은 항상 `data: []`가 내려옵니다.
+
+---
+
+## `PATCH /events/{event_id}/used` — 이벤트 사용 완료 여부 수정
+
+쿠폰/티켓/예약처럼 마감일이 있는 이벤트를 사용자가 상세 화면에서 "사용 완료"로
+표시(또는 해제)합니다. 이벤트가 없는 이미지(영수증/사진/문서 등)는 이벤트
+레코드 자체가 없어 이 API의 대상이 아닙니다.
+
+- Path param: `event_id` (uuid string)
+- Request body:
+
+```json
+{ "is_used": true }
+```
+
+- Response: `200 OK`, body는 `EventResponse` (수정된 이벤트 전체)
+
+에러:
+- `404` — 해당 id의 이벤트가 없음, 또는 그 이벤트가 딸린 이미지가 요청자 소유가 아님
+- `422` — `is_used`가 boolean이 아님
+
+주의: AI Pipeline의 Qwen 연동이 막혀 있어 이벤트 자체가 생성되지 않는 지금은
+실제로 수정할 이벤트가 없어 항상 404가 내려옵니다.
 
 ---
 
