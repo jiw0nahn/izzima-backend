@@ -27,8 +27,22 @@ class EventResponse(BaseModel):
     event_date: Optional[str] = Field(None, description="YYYY-MM-DD, 없으면 null.")
     event_time: Optional[str] = Field(None, description="HH:MM, 없으면 null.")
     location: Optional[str] = None
+    is_used: bool = Field(
+        False,
+        description=(
+            "사용자가 상세 화면에서 '사용 완료'로 표시했는지 여부. 이벤트가 "
+            "있는 이미지(쿠폰/티켓/예약 등)에만 존재하는 개념이라, 이벤트 "
+            "레코드가 없는 이미지(영수증/사진/문서 등)는 애초에 이 필드 자체가 "
+            "나오지 않는다(이벤트가 없으므로). 만료 여부는 event_date로 프론트가 "
+            "계산하므로 여기서 별도로 내려주지 않는다."
+        ),
+    )
     created_at: datetime
 
 
 class EventListResponse(BaseModel):
     data: List[EventResponse]
+
+
+class EventUsedUpdateRequest(BaseModel):
+    is_used: bool = Field(..., description="사용 완료 여부.")
