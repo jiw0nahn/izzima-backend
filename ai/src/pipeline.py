@@ -1,8 +1,10 @@
 from typing import Any
 
 from blip import generate_caption
+from embedding import EmbeddingService
 from models import Event
 from ocr import OCRService
+from postprocess.processor import postprocess_event
 from qwen import QwenService
 
 
@@ -13,6 +15,8 @@ FALLBACK_MODEL = "qwen3.5:27b"
 class AIPipeline:
     def __init__(self) -> None:
         self.ocr_service = OCRService()
+
+        self.embedding_service = EmbeddingService()
 
         # 기본 모델
         self.primary_qwen_service = QwenService(
@@ -42,10 +46,6 @@ class AIPipeline:
 
         metadata = event.metadata
 
-        # -------------------------------------------------
-        # 1. 이벤트 자체가 있는데 핵심 정보가 지나치게 부족한 경우
-        # -------------------------------------------------
-
         if event.type != "none":
             core_fields = [
                 event.title,
@@ -60,21 +60,13 @@ class AIPipeline:
                 for value in core_fields
             )
 
-            # title/date/time/location 중
-            # 1개 이하만 추출됐다면 결과가 너무 빈약함
             if core_value_count <= 1:
                 reasons.append(
                     "핵심 이벤트 필드가 지나치게 부족함"
                 )
 
-        # -------------------------------------------------
-        # 2. reservation
-        # -------------------------------------------------
-
         if event.type == "reservation":
 
-            # 실제 테스트에서 9B가
-            # 장소와 예약번호를 동시에 놓치는 경우가 있었음
             if (
                 event.location is None
                 and metadata.reservation_number is None
@@ -83,7 +75,6 @@ class AIPipeline:
                     "예약 정보에서 장소와 예약번호가 모두 누락됨"
                 )
 
-            # 버튼 텍스트를 현재 상태로 잘못 추출한 경우
             invalid_status_values = {
                 "예매취소",
                 "예약취소",
@@ -101,13 +92,8 @@ class AIPipeline:
                     "버튼 텍스트가 status로 추출됨"
                 )
 
-        # -------------------------------------------------
-        # 3. performance
-        # -------------------------------------------------
-
         if event.type == "performance":
 
-            # 공연인데 제목이나 날짜가 없는 경우
             if event.title is None:
                 reasons.append(
                     "공연 제목이 누락됨"
@@ -118,13 +104,8 @@ class AIPipeline:
                     "공연 날짜가 누락됨"
                 )
 
-        # -------------------------------------------------
-        # 4. expiration
-        # -------------------------------------------------
-
         if event.type == "expiration":
 
-            # 만료 이벤트인데 유효기간이 없는 것은 치명적
             if event.date is None:
                 reasons.append(
                     "만료 이벤트의 유효기간이 누락됨"
@@ -134,10 +115,6 @@ class AIPipeline:
                 reasons.append(
                     "쿠폰/상품권 제목이 누락됨"
                 )
-
-        # -------------------------------------------------
-        # 5. OCR에 명시적 라벨이 있는데 값이 빠진 경우
-        # -------------------------------------------------
 
         normalized_ocr = ocr_text.replace(" ", "")
 
@@ -226,10 +203,7 @@ class AIPipeline:
             image_bytes
         )
 
-        # -------------------------------------------------
         # 3. 먼저 9B 실행
-        # -------------------------------------------------
-
         primary_event: Event = (
             self.primary_qwen_service.process(
                 ocr_text=ocr_text,
@@ -244,14 +218,10 @@ class AIPipeline:
             )
         )
 
-        # 기본적으로 9B 결과 사용
         final_event = primary_event
         used_model = PRIMARY_MODEL
 
-        # -------------------------------------------------
         # 4. 결과가 불충분하면 27B 재실행
-        # -------------------------------------------------
-
         if should_fallback:
             print()
             print("===== FALLBACK =====")
@@ -272,15 +242,26 @@ class AIPipeline:
 
             used_model = FALLBACK_MODEL
 
-        # -------------------------------------------------
-        # 5. 최종 반환
-        # -------------------------------------------------
+        # 5. 규칙 기반 후처리 + search_text 생성
+        final_event = postprocess_event(
+            event=final_event,
+            ocr_text=ocr_text,
+            caption=caption,
+            search_text_version=1,
+        )
 
+        # 6. KURE embedding 생성
+        embedding = self.embedding_service.embed(
+            final_event.search_text
+        )
+
+        # 7. 최종 반환
         return {
             "ocr_result": ocr_result,
             "ocr_text": ocr_text,
             "caption": caption,
             "event": final_event.model_dump(),
+            "embedding": embedding,
 
             # 테스트/디버깅용
             "used_model": used_model,
@@ -311,6 +292,12 @@ def run_pipeline(
     필요할 경우 Qwen 27B
         ↓
     Event
+        ↓
+    Postprocess
+        ↓
+    Search Text
+        ↓
+    KURE Embedding
     """
 
     return _pipeline.run(
