@@ -6,7 +6,7 @@ from ollama import chat
 from pydantic import BaseModel, ValidationError
 
 from models import Event
-from postprocess import postprocess_event
+#  from postprocess import postprocess_event
 
 
 EventType = Literal[
@@ -908,10 +908,12 @@ none:
                 f"검증 오류:\n{error}"
             ) from error
 
-        return postprocess_event(
-            event=event,
-            ocr_text=ocr_text,
-        )
+        return event
+        
+        # postprocess_event(
+        #     event=event,
+        #     ocr_text=ocr_text,
+        # )
 
     def process(
         self,

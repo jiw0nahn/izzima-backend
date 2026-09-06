@@ -5,7 +5,7 @@ from pipeline import run_pipeline
 
 
 def main() -> None:
-    image_path = Path("images/4.png")
+    image_path = Path("images/10.png")
 
     if not image_path.exists():
         raise FileNotFoundError(
@@ -19,7 +19,6 @@ def main() -> None:
     print("image_bytes 타입:", type(image_bytes))
     print("image_bytes 크기:", len(image_bytes), "bytes")
 
-    # caption=None 제거
     result = run_pipeline(
         image_bytes=image_bytes,
     )
@@ -38,6 +37,10 @@ def main() -> None:
             indent=2,
         )
     )
+
+    print("\n===== EMBEDDING =====")
+    print("dimension:", len(result["embedding"]))
+    print("sample:", result["embedding"][:10])
 
 
 if __name__ == "__main__":
