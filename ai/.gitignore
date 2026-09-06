@@ -3,6 +3,9 @@
 venv/
 env/
 
+#image files
+ai/images/
+
 # Python 캐시 및 컴파일 파일
 __pycache__/
 *.py[cod]
