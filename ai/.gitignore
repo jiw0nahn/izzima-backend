@@ -4,7 +4,7 @@ venv/
 env/
 
 #image files
-ai/images/
+images/
 
 # Python 캐시 및 컴파일 파일
 __pycache__/
