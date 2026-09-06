@@ -1,0 +1,157 @@
+[
+  {
+    "query": "GS25 상품권 찾아줘",
+    "target_id": "0"
+  },
+  {
+    "query": "5만원짜리 편의점 상품권",
+    "target_id": "0"
+  },
+  {
+    "query": "파란색 GS25 쿠폰 이미지",
+    "target_id": "0"
+  },
+
+  {
+    "query": "스타벅스 선물 받은 거 찾아줘",
+    "target_id": "1"
+  },
+  {
+    "query": "아메리카노 두 잔이랑 케이크 쿠폰",
+    "target_id": "1"
+  },
+  {
+    "query": "커피랑 케이크가 같이 있는 기프티콘",
+    "target_id": "1"
+  },
+
+  {
+    "query": "중국에서 부산 오는 비행기",
+    "target_id": "3"
+  },
+  {
+    "query": "2월 7일 에어부산 항공권",
+    "target_id": "3"
+  },
+  {
+    "query": "자오둥에서 김해 오는 비행기 예약",
+    "target_id": "3"
+  },
+
+  {
+    "query": "중간고사 일정 찾아줘",
+    "target_id": "4"
+  },
+  {
+    "query": "10월 23일 시험",
+    "target_id": "4"
+  },
+  {
+    "query": "6408 컴퓨터실에서 보는 시험",
+    "target_id": "4"
+  },
+
+  {
+    "query": "히든페이스 영화표",
+    "target_id": "6"
+  },
+  {
+    "query": "CGV 김해에서 보는 영화",
+    "target_id": "6"
+  },
+  {
+    "query": "오후 4시 40분 영화 예매",
+    "target_id": "6"
+  },
+
+  {
+    "query": "8번 출구 영화표 찾아줘",
+    "target_id": "7"
+  },
+  {
+    "query": "부산대 메가박스에서 보는 영화",
+    "target_id": "7"
+  },
+  {
+    "query": "H7 좌석 영화표",
+    "target_id": "7"
+  },
+
+  {
+    "query": "공차 상품권 찾아줘",
+    "target_id": "11"
+  },
+  {
+    "query": "3만원짜리 공차 금액권",
+    "target_id": "11"
+  },
+  {
+    "query": "음료 세 잔이 그려진 공차 쿠폰",
+    "target_id": "11"
+  },
+
+  {
+    "query": "워터밤 예매 내역",
+    "target_id": "29"
+  },
+  {
+    "query": "킨텍스에서 하는 공연",
+    "target_id": "29"
+  },
+  {
+    "query": "14만 5천원 결제한 공연",
+    "target_id": "29"
+  },
+
+  {
+    "query": "졸업과제 중간보고서 제출 공지",
+    "target_id": "academic_2"
+  },
+  {
+    "query": "졸업과제 중간평가 언제까지 제출이지",
+    "target_id": "academic_2"
+  },
+  {
+    "query": "3월 27일까지 내야 하는 과제",
+    "target_id": "academic_2"
+  },
+
+  {
+    "query": "출석인정 신청 공지 찾아줘",
+    "target_id": "academic_6"
+  },
+  {
+    "query": "출석인정 신청 언제까지야",
+    "target_id": "academic_6"
+  },
+  {
+    "query": "6월 10일 오후 1시까지 신청해야 하는 거",
+    "target_id": "academic_6"
+  },
+
+  {
+    "query": "회전초밥 먹은 사진",
+    "target_id": "none_2"
+  },
+  {
+    "query": "참치 초밥 사진",
+    "target_id": "none_2"
+  },
+  {
+    "query": "접시에 초밥이 올라가 있는 사진",
+    "target_id": "none_2"
+  },
+
+  {
+    "query": "부산에서 중국 가는 비행기",
+    "target_id": "rsv_2"
+  },
+  {
+    "query": "2월 5일 에어부산 항공권",
+    "target_id": "rsv_2"
+  },
+  {
+    "query": "김해에서 자오둥 가는 비행기 예약",
+    "target_id": "rsv_2"
+  }
+]
