@@ -37,8 +37,13 @@ ai.pipeline.run_pipeline()의 반환 계약 (ai/src/models.py::Event 기준, 202
       },
     }
 
-임베딩(KURE-v1)은 이 계약에서 빠졌다 — embedding_service.py가 별도로 담당할
-예정이라 이 서비스는 애초에 사용하지 않았으므로 영향 없음.
+임베딩(KURE-v1)은 위 docstring 작성 시점엔 이 계약에서 빠져있었지만, ai/src
+쪽에서 postprocess를 파일별로 분리하고 KURE 임베딩을 pipeline.py에 연결한
+이후로는 반환값 최상위에 "embedding": list[float] | [] 가 추가됐다
+(ai/src/pipeline.py::AIPipeline.run 참고, final_event.search_text를 그
+자리에서 바로 임베딩). 그래서 이미지 업로드 시의 임베딩은 더 이상
+embedding_service.py가 담당하지 않고 이 결과의 embedding 필드를 그대로 쓰면
+된다 - embedding_service.py는 이제 검색어(GET /search?q=) 임베딩 전용이다.
 
 event는 events 테이블 대상 데이터다 — events_crud가 아직 스텁이라 지금은 저장하지
 않고 호출부에 그대로 전달만 한다. events_crud가 구현되면 라우터에서 event.type이
@@ -77,6 +82,7 @@ class AIPipelineResult(TypedDict):
     caption: Optional[str]
     primary_category: Optional[str]
     search_text: Optional[str]
+    embedding: Optional[list[float]]
     event: EventInfo
 
 
@@ -94,6 +100,7 @@ _EMPTY_RESULT: AIPipelineResult = {
     "caption": None,
     "primary_category": None,
     "search_text": None,
+    "embedding": None,
     "event": _EMPTY_EVENT,
 }
 
@@ -125,6 +132,7 @@ def run_ai_pipeline(file_bytes: bytes, filename: str) -> AIPipelineResult:
         "caption": raw.get("caption"),
         "primary_category": metadata.get("category"),
         "search_text": event.get("search_text"),
+        "embedding": raw.get("embedding") or None,
         "event": {
             "type": event.get("type", "none"),
             "date": event.get("date"),
