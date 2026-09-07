@@ -250,24 +250,19 @@ AI Pipeline(Qwen)이 잘못 분류했을 때 사용자가 직접 보정하는 �
 ```
 
 에러:
-- `503` — 임베딩 모델(KURE-v1)을 이 서버 프로세스에서 호출할 수 없어 검색 자체를
-  수행할 수 없음. 빈 결과(`data: []`)와 구분하기 위해 일부러 에러로 응답합니다.
+- `503` — AI 서버(`AI_SERVER_URL`)를 호출할 수 없어(설정 안 됨/터널 꺼짐/실패) 검색어
+  임베딩 자체를 만들 수 없음. 빈 결과(`data: []`)와 구분하기 위해 일부러 에러로
+  응답합니다.
 - `502` — Supabase 쪽 유사도 검색(rpc) 호출 실패
 
-주의: KURE-v1은 `ai/src/embedding.py`에 구현돼 있지만, 백엔드가 그걸 직접
-import해서 호출하는 구조(HTTP 아님)라 **`ai/`의 무거운 의존성(torch,
-sentence-transformers 등)이 설치돼 있고 모델 로딩이 되는 환경에서만** 실제로
-동작합니다. Railway 배포(`ai/`가 안 실려있음)나 그런 의존성이 없는 로컬
-개발 환경에서는 여전히 항상 503이 내려갑니다.
+검색어는 AI 서버의 `POST {AI_SERVER_URL}/embed-query`를 호출해 KURE-v1
+임베딩으로 변환합니다 (직접 `ai/src` import 아님, HTTP 호출이라 Railway 배포
+환경에서도 동작). `AI_SERVER_URL`이 최신 값으로 설정돼 있어야 합니다.
 
 ---
 
 ## 아직 없는 것 (프론트에서 기대하면 안 되는 기능)
 
 - 카테고리 폴더 UI에 쓸 수 있는 실제 `category` 값
-- 자연어 검색 API의 실제 동작 — 엔드포인트(`GET /search`)와 KURE-v1 임베딩
-  모듈(`ai/src/embedding.py`)은 다 구현됐지만, 백엔드가 `ai/`를 직접 import하는
-  구조라 그 무거운 의존성이 설치된 환경(GPU 서버 등)에서만 동작 → Railway
-  배포나 일반 로컬 개발 환경에서는 여전히 검색 호출 시 항상 503
-- 안정적인 이벤트 데이터 — `POST /images`가 AI 서버(`AI_SERVER_URL`)를 호출해 실제 이벤트를 생성하지만, 그 서버가 GPU 서버에서 Cloudflare Tunnel로 임시 노출된 상태라 터널 URL이 바뀌거나 꺼지면 이벤트가 다시 안 생길 수 있음
+- 안정적인 자연어 검색/이벤트 데이터 — `POST /images`/`GET /search` 둘 다 AI 서버(`AI_SERVER_URL`)를 HTTP로 호출해 실제 동작하지만, 그 서버가 GPU 서버에서 Cloudflare Tunnel로 임시 노출된 상태라 터널 URL이 바뀌거나 꺼지면 둘 다 다시 안 됨 (503/이벤트 미생성)
 - 이미지 태그(`image_tags`) 관련 API — 테이블 자체가 아직 crud/router 없음
