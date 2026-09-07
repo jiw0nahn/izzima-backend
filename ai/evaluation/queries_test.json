@@ -1,0 +1,131 @@
+[
+  {
+    "query": "군체 영화표 찾아줘",
+    "target_id": "2"
+  },
+  {
+    "query": "6월 30일 오후 3시 반 영화 예매",
+    "target_id": "2"
+  },
+  {
+    "query": "센텀시티에서 보는 군체",
+    "target_id": "2"
+  },
+
+  {
+    "query": "라멘 먹은 사진 찾아줘",
+    "target_id": "7"
+  },
+  {
+    "query": "고기 올라간 라멘 사진",
+    "target_id": "7"
+  },
+  {
+    "query": "계란 노른자 올라간 음식 사진",
+    "target_id": "7"
+  },
+
+  {
+    "query": "GS25 만원 상품권 찾아줘",
+    "target_id": "7_1"
+  },
+  {
+    "query": "4월 19일까지인 편의점 상품권",
+    "target_id": "7_1"
+  },
+  {
+    "query": "주황색 GS25 모바일 금액권",
+    "target_id": "7_1"
+  },
+
+  {
+    "query": "여름 계절수업 수강정정 공지",
+    "target_id": "8"
+  },
+  {
+    "query": "계절학기 수강정정 언제까지야",
+    "target_id": "8"
+  },
+  {
+    "query": "6월 5일까지 수강정정하는 거 찾아줘",
+    "target_id": "8"
+  },
+
+  {
+    "query": "초코에몽 기프티콘 찾아줘",
+    "target_id": "10"
+  },
+  {
+    "query": "GS25 초코우유 쿠폰",
+    "target_id": "10"
+  },
+  {
+    "query": "8월 20일까지인 초코에몽",
+    "target_id": "10"
+  },
+
+  {
+    "query": "몬스터 에너지 기프티콘 찾아줘",
+    "target_id": "12"
+  },
+  {
+    "query": "GS25 에너지드링크 쿠폰",
+    "target_id": "12"
+  },
+  {
+    "query": "흰색 몬스터 캔 상품권",
+    "target_id": "12"
+  },
+
+  {
+    "query": "병원 예약 찾아줘",
+    "target_id": "13"
+  },
+  {
+    "query": "5월 29일 오후 1시 시술 예약",
+    "target_id": "13"
+  },
+  {
+    "query": "매그넘의원 예약",
+    "target_id": "13"
+  },
+
+  {
+    "query": "진격의 거인전 예약 찾아줘",
+    "target_id": "21"
+  },
+  {
+    "query": "7월 19일 전시 예약",
+    "target_id": "21"
+  },
+  {
+    "query": "오후 4시에 보는 진격의 거인 전시",
+    "target_id": "21"
+  },
+
+  {
+    "query": "백룸 영화표 찾아줘",
+    "target_id": "movie_8"
+  },
+  {
+    "query": "부산대 메가박스 영화 예매",
+    "target_id": "movie_8"
+  },
+  {
+    "query": "G15 좌석 영화표",
+    "target_id": "movie_8"
+  },
+
+  {
+    "query": "노란색 캐릭터 사진 찾아줘",
+    "target_id": "none_0"
+  },
+  {
+    "query": "입에 파란색 물건 물고 있는 캐릭터",
+    "target_id": "none_0"
+  },
+  {
+    "query": "분홍색 하트 옆에 있는 병아리 캐릭터",
+    "target_id": "none_0"
+  }
+]

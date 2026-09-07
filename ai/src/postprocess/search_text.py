@@ -124,3 +124,54 @@ def build_search_text_v4(
             caption,
         ]
     )
+
+
+def build_search_text_v5(
+    event: Event,
+    caption: str | None,
+    ocr_text: str | None,
+) -> str:
+    """
+    V5
+
+    일반 Event:
+    - V3 사용
+
+    none Event:
+    - OCR + caption 사용
+    """
+
+    if event.type == "none":
+        return _join_parts(
+            [
+                ocr_text,
+                caption,
+            ]
+        )
+
+    return build_search_text_v3(event)
+
+
+def build_search_text_v6(
+    event: Event,
+    caption: str | None,
+    ocr_text: str | None,
+) -> str:
+    """
+    V6
+
+    일반 Event:
+    - V3 사용
+
+    none Event:
+    - OCR이 있으면 OCR만 사용
+    - OCR이 없으면 caption 사용
+    """
+
+    if event.type == "none":
+        if ocr_text and ocr_text.strip():
+            return ocr_text.strip()
+
+        return (caption or "").strip()
+
+    return build_search_text_v3(event)
