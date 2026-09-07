@@ -5,11 +5,22 @@ KURE-v1 임베딩 모델 호출 서비스 경계. app/services/ai_pipeline_servi
 패턴 - HTTP가 아니라 monorepo의 형제 패키지 `ai/src/`를 sys.path에 얹고 bare
 import로 함수를 호출한다.
 
-아래 import(`from embedding import embed_text`)는 ai/src의 다른 모듈 이름
-규칙(ocr.py/blip.py/qwen.py)에 맞춰 "추정"해서 짜둔 것이고, 실제 파일명/함수
-시그니처는 다를 수 있다. ai/src/embedding.py가 생기면 이 파일의 import 문과
-_embed_text 호출부만 실제 시그니처에 맞게 고치면 되고, 호출부(라우터/crud)는
-건드릴 필요 없다.
+이미지 업로드 시의 임베딩(images.search_text)은 더 이상 이 파일이 담당하지
+않는다 - ai/src/pipeline.py::run_pipeline()이 OCR/BLIP/Qwen/후처리에 이어
+KURE 임베딩까지 파이프라인 내부에서 직접 계산해 결과에 포함시키도록 바뀌었고
+(ai_pipeline_service.py의 AIPipelineResult.embedding), app/routers/images.py는
+그 값을 그대로 저장한다. 이 모듈은 오직 **검색어(GET /search?q=) 임베딩**만
+담당한다 - 이건 이미지 파이프라인과 무관하게 요청마다 새로 생기는 텍스트라
+파이프라인이 대신해줄 수 없다.
+
+ai/src/embedding.py의 실제 인터페이스는 함수가 아니라 클래스다:
+    class EmbeddingService:
+        def __init__(self) -> None: ...  # SentenceTransformer(KURE-v1) 로딩
+        def embed(self, text: str) -> list[float]: ...  # 빈 텍스트면 [] 반환
+
+그래서 모듈 최상위에서 인스턴스를 한 번만 생성해 재사용한다 (매 요청마다 모델을
+다시 로딩하면 너무 느림) - ai_pipeline_service.py가 AIPipeline()을 모듈 최상위에서
+한 번만 생성하는 것과 같은 패턴.
 """
 
 import sys
@@ -22,27 +33,32 @@ if str(_AI_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_AI_SRC_DIR))
 
 try:
-    from embedding import embed_text as _embed_text  # 추정 - 실제 모듈 생기면 확인 필요
-except ImportError:
-    _embed_text = None
+    from embedding import EmbeddingService as _EmbeddingServiceClass
+
+    _service = _EmbeddingServiceClass()
+except Exception as error:
+    print(f"[embedding_service] EmbeddingService 초기화 실패: {error}")
+    _service = None
 
 
 def generate_embedding(text: str) -> Optional[list[float]]:
     """
-    텍스트(images.search_text 또는 검색어)를 KURE-v1 임베딩 벡터(1024차원,
-    image_embeddings.embedding 컬럼과 동일한 차원)로 변환한다.
+    검색어를 KURE-v1 임베딩 벡터(1024차원, image_embeddings.embedding 컬럼과
+    동일한 차원)로 변환한다.
 
-    ai/src에 임베딩 모듈이 없거나(_embed_text가 None) 호출이 실패하면 None을
-    반환한다. ai_pipeline_service.run_ai_pipeline과 동일한 fail-open 원칙 -
-    호출부는 None을 받으면 해당 동작(임베딩 저장 또는 검색)을 건너뛰되, 그 자체로
-    상위 요청(이미지 업로드 등)을 막아서는 안 된다. 다만 검색 라우터처럼 None이
-    "결과 없음"과 구분되어야 하는 곳에서는 호출부가 별도로 처리한다.
+    ai/src를 import할 수 없거나(예: Railway처럼 ai/ 없이 backend/만 배포된 환경)
+    모델 로딩 자체가 실패하면(_service가 None) 항상 None을 반환한다 -
+    ai_pipeline_service.run_ai_pipeline과 동일한 fail-open 원칙. EmbeddingService.embed()는
+    빈 텍스트에 빈 리스트(`[]`)를 반환하는데, 그것도 "임베딩 없음"과 같은 의미이므로
+    None으로 통일해서 반환한다.
     """
-    if _embed_text is None or not text:
+    if _service is None or not text:
         return None
 
     try:
-        return _embed_text(text)
+        embedding = _service.embed(text)
     except Exception as error:
-        print(f"[embedding_service] embed_text 실패: {error}")
+        print(f"[embedding_service] embed 실패: {error}")
         return None
+
+    return embedding or None

@@ -5,10 +5,11 @@ app/routers/search.py
 image_embeddings와 pgvector 코사인 유사도로 비교한 뒤 가까운 순으로 이미지를
 반환한다.
 
-주의: 이 파일 작성 시점 기준 embedding_service.generate_embedding()이 KURE-v1
-미연동으로 항상 None을 반환한다 - 그 경우 "결과 없음"과 구분하기 위해 빈 목록이
-아니라 503으로 응답한다. 모델이 붙으면 이 라우트는 그대로 두고
-embedding_service 내부만 정상 동작하면 된다.
+주의: ai/src/embedding.py(KURE-v1)가 import 가능한 환경(예: ai/ 의존성이 설치된
+GPU 서버)에서만 실제로 검색이 동작한다. ai/src를 import할 수 없는 환경(Railway
+배포, ai/ 의존성 미설치 로컬 등)에서는 embedding_service.generate_embedding()이
+항상 None을 반환하고, 이 라우트는 그 경우를 "결과 없음"과 구분하기 위해 빈
+목록이 아니라 503으로 응답한다.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -31,9 +32,9 @@ def search_images(
     """
     검색어를 임베딩해 요청자 소유 이미지 중 코사인 유사도가 가까운 순으로 반환한다.
 
-    embedding_service가 아직 스텁(KURE-v1 미연동)이라 지금은 항상 503으로
+    embedding_service가 ai/src/embedding.py를 import 못 하는 환경이면 503으로
     응답한다. 임베딩이 없는(업로드 당시 AI Pipeline이 search_text를 못 뽑았거나
-    embedding_service가 실패했던) 이미지는 애초에 image_embeddings에 행이 없어
+    임베딩 저장이 실패했던) 이미지는 애초에 image_embeddings에 행이 없어
     검색 대상에서 자연히 빠진다.
     """
     query_embedding = generate_embedding(q)
