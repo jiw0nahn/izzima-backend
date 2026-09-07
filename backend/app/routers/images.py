@@ -10,7 +10,6 @@ from app.core.security import get_current_user_id
 from app.crud import embeddings_crud, events_crud, images_crud
 from app.schemas.images import CategoryUpdateRequest, ImageListResponse, ImageResponse
 from app.services.ai_pipeline_service import run_ai_pipeline
-from app.services.embedding_service import generate_embedding
 from app.services.storage_service import (
     delete_image_from_storage,
     get_signed_url,
@@ -41,10 +40,11 @@ async def upload_image(
     그대로 두고 run_ai_pipeline() 내부만 정상 동작하면 됨.
 
     pipeline_result["event"].type이 "none"이 아니면 events 테이블에도 레코드를
-    생성한다. search_text가 있으면 embedding_service로 임베딩을 만들어
-    image_embeddings에도 저장한다(KURE-v1 미연동 상태라 지금은 embedding_service가
-    항상 None을 반환해 건너뛰어짐). 이벤트/임베딩 저장 실패는 이미지 업로드
-    자체를 막지 않는다 (부가 정보라 실패해도 로그만 남기고 넘어감).
+    생성한다. pipeline_result["embedding"]이 있으면(ai/src/pipeline.py가 OCR/BLIP/
+    Qwen/후처리에 이어 KURE 임베딩까지 파이프라인 내부에서 이미 계산해서 준
+    값이라, 여기서 embedding_service를 따로 호출하지 않는다) image_embeddings에도
+    저장한다. 이벤트/임베딩 저장 실패는 이미지 업로드 자체를 막지 않는다 (부가
+    정보라 실패해도 로그만 남기고 넘어감).
     """
     upload_result = await upload_image_to_storage(file)
     storage_path = upload_result["storage_path"]
@@ -80,14 +80,12 @@ async def upload_image(
         except HTTPException as e:
             print(f"[images router] 이벤트 저장 실패: {e.detail}")
 
-    search_text = pipeline_result["search_text"]
-    if search_text:
-        embedding = generate_embedding(search_text)
-        if embedding is not None:
-            try:
-                embeddings_crud.create_embedding(image["id"], embedding)
-            except HTTPException as e:
-                print(f"[images router] 임베딩 저장 실패: {e.detail}")
+    embedding = pipeline_result["embedding"]
+    if embedding is not None:
+        try:
+            embeddings_crud.create_embedding(image["id"], embedding)
+        except HTTPException as e:
+            print(f"[images router] 임베딩 저장 실패: {e.detail}")
 
     return ImageResponse(**image, signed_url=get_signed_url(storage_path))
 
