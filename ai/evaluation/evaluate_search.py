@@ -22,8 +22,8 @@ from postprocess.search_text import (
 )
 
 
-EVENTS_PATH = EVAL_DIR / "events.json"
-QUERIES_PATH = EVAL_DIR / "queries.json"
+EVENTS_PATH = EVAL_DIR / "test_events.json"
+QUERIES_PATH = EVAL_DIR / "queries_test.json"
 
 
 def cosine_similarity(
