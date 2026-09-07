@@ -1,20 +1,26 @@
 """
 app/services/ai_pipeline_service.py
 
-AI Pipeline(OCR -> BLIP -> Qwen2.5-Instruct) 호출 서비스 경계.
+AI Pipeline(OCR -> BLIP -> Qwen -> KURE 임베딩) 호출 서비스 경계.
 
-모델 내부(OCR/캡셔닝/구조화 추출)는 팀원(문진서) 담당이므로 이 파일은 그
+모델 내부(OCR/캡셔닝/구조화 추출/임베딩)는 팀원(문진서) 담당이므로 이 파일은 그
 파이프라인을 "호출"하는 인터페이스만 정의한다.
 
-호출 방식: HTTP가 아니라 monorepo의 형제 패키지 `ai/src/`를 직접 import해서
-함수 호출한다 (ai/src/pipeline.py::run_pipeline(image_bytes) -> dict).
-`ai/src/pipeline.py`가 내부에서 `from blip import ...` 식의 절대경로 없는
-bare import를 쓰고 있어서 (ai/src를 패키지가 아니라 스크립트 실행 위치로
-가정한 구조), monorepo 루트가 아니라 `ai/src` 디렉터리 자체를 sys.path에
-넣어야 한다.
+호출 방식 (2026-09-07부터 HTTP로 전환): 예전에는 monorepo의 형제 패키지
+`ai/src/`를 직접 import해서 같은 프로세스 안에서 호출했는데, 이러면 백엔드
+프로세스 자체가 GPU 서버(Ollama가 떠 있는 곳) 위에서 돌아야만 동작하는 문제가
+있었다 - 그 GPU 서버는 방화벽에서 SSH(8022)만 열려있고 다른 포트는 다 막혀있어서,
+Railway 같은 외부 배포 환경에서는 그 서버에 직접 접근할 방법이 없었다 (직접
+Test-NetConnection으로 확인함).
 
-ai.pipeline.run_pipeline()의 반환 계약 (ai/src/models.py::Event 기준, 2026-08-02
-53cc6ef 커밋 시점):
+진서님이 그 GPU 서버 위에서 파이프라인 전체(OCR/BLIP/Qwen/KURE 임베딩)를 감싸는
+FastAPI 서버(`POST /analyze`)를 만들고 Cloudflare Tunnel(`cloudflared`)로 노출해둬서,
+이제 HTTP로 호출한다. Cloudflare Tunnel은 GPU 서버가 아웃바운드로 연결을 열어서
+공개 URL을 받는 방식이라, 인바운드 방화벽 설정 변경 없이도 외부(Railway 포함)에서
+그 URL로 접속할 수 있다. 단, `trycloudflare.com` quick tunnel URL은 `cloudflared`
+재시작 시 바뀔 수 있어 매번 하드코딩하지 않고 AI_SERVER_URL 환경변수로 받는다.
+
+POST {AI_SERVER_URL}/analyze의 반환 계약 (ai/src/models.py::Event 기준):
     {
       "ocr_result": {...},      # ai/src/ocr.py::OCRService.extract_text() 원본 결과. 사용 안 함.
       "ocr_text": "...",
@@ -30,42 +36,40 @@ ai.pipeline.run_pipeline()의 반환 계약 (ai/src/models.py::Event 기준, 202
         "location": "string | null",
         "search_text": "...",
         "metadata": {
-          "category": "string | null",   # 더 이상 8개 고정값이 아니라 자유 텍스트.
+          "category": "string | null",   # 8개 고정값이 아니라 자유 텍스트.
           ...                             # reservation_number/amount 등 나머지는
                                           # events 테이블이 아직 스텁이라 지금은 사용 안 함.
         },
       },
+      "embedding": [float, ...] | [],   # KURE-v1, search_text가 비어있으면 []
+      "used_model": "...",              # 디버깅용, 사용 안 함
+      "fallback_used": bool,            # 디버깅용, 사용 안 함
+      "fallback_reasons": [...],        # 디버깅용, 사용 안 함
     }
 
-임베딩(KURE-v1)은 위 docstring 작성 시점엔 이 계약에서 빠져있었지만, ai/src
-쪽에서 postprocess를 파일별로 분리하고 KURE 임베딩을 pipeline.py에 연결한
-이후로는 반환값 최상위에 "embedding": list[float] | [] 가 추가됐다
-(ai/src/pipeline.py::AIPipeline.run 참고, final_event.search_text를 그
-자리에서 바로 임베딩). 그래서 이미지 업로드 시의 임베딩은 더 이상
-embedding_service.py가 담당하지 않고 이 결과의 embedding 필드를 그대로 쓰면
-된다 - embedding_service.py는 이제 검색어(GET /search?q=) 임베딩 전용이다.
-
-event는 events 테이블 대상 데이터다 — events_crud가 아직 스텁이라 지금은 저장하지
+event는 events 테이블 대상 데이터다 - events_crud가 아직 스텁이라 지금은 저장하지
 않고 호출부에 그대로 전달만 한다. events_crud가 구현되면 라우터에서 event.type이
 "none"이 아닐 때만 레코드를 만들면 된다.
+
+검색어(GET /search?q=) 임베딩은 이 서비스가 담당하지 않는다 - /analyze는 이미지
+전용이라 텍스트만 임베딩하는 용도로 못 쓴다. app/services/embedding_service.py가
+별도로 담당한다 (지금은 여전히 ai/src를 직접 import하는 방식 - AI 서버에 텍스트
+임베딩 엔드포인트가 생기면 그쪽도 HTTP로 통일할 수 있음).
 """
 
-import sys
-from pathlib import Path
+import os
 from typing import Optional, TypedDict
 
-# ai/src는 __init__.py가 없는 비-패키지 디렉터리라 `ai.src.pipeline`으로 import할
-# 수 없다 — ai/src 자체를 sys.path에 넣고 `pipeline`을 최상위 모듈로 import해야
-# pipeline.py 내부의 bare import(`from blip import ...`)도 함께 풀린다.
-# backend/app/services/ai_pipeline_service.py -> parents[3] == 모노레포 루트
-_AI_SRC_DIR = Path(__file__).resolve().parents[3] / "ai" / "src"
-if str(_AI_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_AI_SRC_DIR))
+import httpx
+from dotenv import load_dotenv
 
-try:
-    from pipeline import run_pipeline as _run_pipeline
-except ImportError:
-    _run_pipeline = None
+load_dotenv()
+
+AI_SERVER_URL = os.environ.get("AI_SERVER_URL", "").rstrip("/")
+
+# Qwen 9B->27B 폴백까지 걸릴 수 있어 넉넉하게 잡음. GPU가 다른 작업으로 바쁘면
+# 더 오래 걸릴 수 있다 (실제로 직접 확인한 적 있음).
+_REQUEST_TIMEOUT_SECONDS = 120.0
 
 
 class EventInfo(TypedDict):
@@ -107,21 +111,27 @@ _EMPTY_RESULT: AIPipelineResult = {
 
 def run_ai_pipeline(file_bytes: bytes, filename: str) -> AIPipelineResult:
     """
-    업로드된 이미지 원본으로 OCR 텍스트/캡션/카테고리/search_text/이벤트 정보를 추출한다.
+    업로드된 이미지 원본으로 OCR 텍스트/캡션/카테고리/search_text/이벤트/임베딩을
+    추출한다. AI 서버(POST {AI_SERVER_URL}/analyze)를 호출한다.
 
-    ai/src를 import할 수 없는 환경(예: ai/ 없이 backend/만 배포된 Railway,
-    또는 모델 의존성이 로컬에 설치 안 된 경우)이거나 파이프라인 실행 자체가
-    실패하면 빈 결과로 대체한다. 파이프라인 실패가 업로드 자체를 막아서는 안
-    되므로 이 함수는 예외를 던지지 않는다 — 실패 원인은 로깅만 하고 null로
-    채운 결과를 반환한다.
+    AI_SERVER_URL이 설정 안 되어 있거나(예: 아직 값을 못 받은 환경), 그 URL에
+    접속이 안 되거나(터널이 꺼져있음 등), 호출 자체가 실패하면 빈 결과로
+    대체한다. 파이프라인 실패가 업로드 자체를 막아서는 안 되므로 이 함수는
+    예외를 던지지 않는다 - 실패 원인은 로깅만 하고 null로 채운 결과를 반환한다.
     """
-    if _run_pipeline is None:
+    if not AI_SERVER_URL:
         return _EMPTY_RESULT
 
     try:
-        raw = _run_pipeline(file_bytes)
+        response = httpx.post(
+            f"{AI_SERVER_URL}/analyze",
+            files={"file": (filename, file_bytes)},
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        raw = response.json()
     except Exception as error:
-        print(f"[ai_pipeline_service] run_pipeline 실패: {error}")
+        print(f"[ai_pipeline_service] AI 서버 호출 실패: {error}")
         return _EMPTY_RESULT
 
     event = raw.get("event") or {}
