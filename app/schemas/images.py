@@ -12,18 +12,21 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-# Qwen 구조화 추출 스펙(app/services/ai_pipeline_service.py 상단 docstring)의
-# primary_category 후보값과 동일하게 맞춘다. AI Pipeline이 채우는 값과 사용자가
-# PATCH로 보정하는 값이 항상 같은 후보 집합을 쓰도록 하기 위함.
+# ai/src/models.py::EventType과 동일한 값 집합.
+# 예전에는 별도의 Qwen category 후보값을 썼는데 event.type과 의미 중복으로 category 필드 아예 삭제.
+# event.type을 그대로 대신 씀. AI Pipeline이 채우는 값과 사용자가 PATCH로 보정하는 값이 항상같은
+# 집합을 쓰도록 EventType과 맞춰둔다.
 CategoryLiteral = Literal[
-    "coupon",
-    "ticket",
+    "expiration",
+    "exam",
+    "assignment_due",
     "reservation",
-    "academic",
-    "receipt",
-    "document",
-    "photo",
-    "other",
+    "departure",
+    "check_in",
+    "performance",
+    "meeting",
+    "schedule",
+    "none",
 ]
 
 
@@ -40,7 +43,7 @@ class ImageResponse(BaseModel):
         None, description="BLIP 캡션. AI Pipeline 미연동 상태에서는 null."
     )
     category: Optional[str] = Field(
-        None, description="Qwen 분류 카테고리. AI Pipeline 미연동 상태에서는 null."
+        None, description="AI가 추출한 이벤트 타입(EventType) 값. AI Pipeline 미연동 상태에서는 null."
     )
     search_text: Optional[str] = Field(
         None, description="자연어 검색용 텍스트. AI Pipeline 미연동 상태에서는 null."
@@ -64,7 +67,8 @@ class CategoryUpdateRequest(BaseModel):
     category: CategoryLiteral = Field(
         ...,
         description=(
-            "변경할 카테고리. Qwen 구조화 추출 스펙과 동일한 8개 후보값만 허용 "
-            "(coupon/ticket/reservation/academic/receipt/document/photo/other)."
+            "변경할 category 값. ai/src/models.py::EventType과 동일한 10개 후보값만 "
+            "허용 (expiration/exam/assignment_due/reservation/departure/check_in/"
+            "performance/meeting/schedule/none)."
         ),
     )
