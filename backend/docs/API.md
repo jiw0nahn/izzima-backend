@@ -25,7 +25,7 @@
 | `storage_path` | string | Storage 상의 object key (프론트에서 직접 쓸 일 없음, 참고용) |
 | `ocr_text` | string \| null | OCR 텍스트. AI 서버(`AI_SERVER_URL`) 호출이 안 되는 환경/실패 시 null. |
 | `caption` | string \| null | 이미지 캡션. 위와 동일한 조건에서만 채워짐. |
-| `category` | string \| null | 분류 카테고리(자유 텍스트, 8개 고정값 아님). 이벤트가 없는 이미지(영수증/사진/문서 등)는 null일 수 있음 — 폴더 UI는 이 필드가 안정적으로 채워지기 전까지 보류. |
+| `category` | string \| null | 분류 카테고리. 값은 `event.type`과 동일한 10개 고정값 중 하나 — `expiration`/`exam`/`assignment_due`/`reservation`/`departure`/`check_in`/`performance`/`meeting`/`schedule`/`none` (2026-09-08부터: 예전엔 Qwen이 뽑는 별도 자유 텍스트였는데, event.type과 의미가 중복돼서 이제 event.type 값을 그대로 씀 — 필드 이름은 프론트 계약 유지를 위해 `category` 그대로). 이벤트가 없는 이미지(영수증/사진/문서 등)는 null일 수 있음 — 폴더 UI는 이 필드가 안정적으로 채워지기 전까지 보류. |
 | `search_text` | string \| null | 자연어 검색용 텍스트. |
 | `created_at` | string (ISO 8601 datetime) | 생성 시각 |
 | `signed_url` | string \| null | private 버킷의 임시 서명 URL. **기본 24시간 후 만료 — 캐시/영구 저장하지 말고, 화면에 진입할 때마다 새로 받은 응답의 값을 사용할 것.** 서명 발급 자체가 실패한 경우 null일 수 있음. |
@@ -62,7 +62,7 @@ FastAPI 기본 형식을 그대로 사용합니다.
 |---|---|
 | 400 | 잘못된 요청 (지원하지 않는 확장자, 용량 초과 등) |
 | 404 | 대상 리소스 없음 |
-| 422 | 요청 body 유효성 검증 실패 (예: `category`가 허용된 8개 값 밖) |
+| 422 | 요청 body 유효성 검증 실패 (예: `category`가 허용된 10개 값 밖) |
 | 502 | 서버가 Supabase(Storage/DB) 호출에 실패 |
 
 ---
@@ -123,11 +123,12 @@ AI Pipeline(Qwen)이 잘못 분류했을 때 사용자가 직접 보정하는 �
 - Request body (JSON):
 
 ```json
-{ "category": "coupon" }
+{ "category": "reservation" }
 ```
 
-  - `category`: 다음 8개 값 중 하나만 허용 — `coupon`, `ticket`, `reservation`,
-    `academic`, `receipt`, `document`, `photo`, `other`. 그 외 값은 `422`.
+  - `category`: 다음 10개 값 중 하나만 허용 (`event.type`과 동일한 집합, 2026-09-08부터) —
+    `expiration`, `exam`, `assignment_due`, `reservation`, `departure`, `check_in`,
+    `performance`, `meeting`, `schedule`, `none`. 그 외 값은 `422`.
 - Response: `200 OK`, body는 `ImageResponse` (변경된 `category` 반영)
 - `404` — 해당 id의 이미지가 없음, 또는 요청자 소유가 아님
 - `422` — `category`가 허용 목록 밖의 값

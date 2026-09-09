@@ -34,17 +34,13 @@ async def upload_image(
     이미지를 Storage에 업로드하고 images 테이블에 레코드를 생성한다.
     레코드의 user_id는 인증 토큰에서 추출한 요청자 uuid로 채워진다.
 
-    AI Pipeline(OCR/캡션/카테고리/search_text/이벤트)을 호출해 결과를 함께 저장한다.
-    다만 GPU 서버의 Ollama(Qwen 구조화 추출이 의존)가 아직 응답하지 않는 상태라
-    run_ai_pipeline()이 현재는 항상 빈 값을 반환한다 - 그쪽이 복구되면 이 라우트는
-    그대로 두고 run_ai_pipeline() 내부만 정상 동작하면 됨.
+    AI Pipeline(OCR/캡션/category(=event.type)/search_text/이벤트)을 호출해 결과를
+    함께 저장한다. GPU 서버와의 연결이 안 됐다면 run_ai_pipeline()이 현재는 항상
+    빈 값을 반환한다.
 
     pipeline_result["event"].type이 "none"이 아니면 events 테이블에도 레코드를
-    생성한다. pipeline_result["embedding"]이 있으면(ai/src/pipeline.py가 OCR/BLIP/
-    Qwen/후처리에 이어 KURE 임베딩까지 파이프라인 내부에서 이미 계산해서 준
-    값이라, 여기서 embedding_service를 따로 호출하지 않는다) image_embeddings에도
-    저장한다. 이벤트/임베딩 저장 실패는 이미지 업로드 자체를 막지 않는다 (부가
-    정보라 실패해도 로그만 남기고 넘어감).
+    생성한다. pipeline_result["embedding"]이 있으면 image_embeddings에도 저장한다.
+    이벤트/임베딩 저장 실패는 이미지 업로드 자체를 막지 않고, 로그만 남기고 넘어감).
     """
     upload_result = await upload_image_to_storage(file)
     storage_path = upload_result["storage_path"]
@@ -52,6 +48,7 @@ async def upload_image(
     pipeline_result = run_ai_pipeline(
         file_bytes=upload_result["file_bytes"], filename=file.filename
     )
+    event = pipeline_result["event"]
 
     try:
         image = images_crud.create_image(
@@ -59,14 +56,13 @@ async def upload_image(
             user_id=user_id,
             ocr_text=pipeline_result["ocr_text"],
             caption=pipeline_result["caption"],
-            category=pipeline_result["primary_category"],
+            category=event["type"] if event["type"] != "none" else None,
             search_text=pipeline_result["search_text"],
         )
     except HTTPException:
         delete_image_from_storage(storage_path)
         raise
 
-    event = pipeline_result["event"]
     if event["type"] != "none":
         try:
             events_crud.create_event(
@@ -122,9 +118,10 @@ def update_image_category(
     """
     이미지의 category를 사용자가 직접 수정한다.
 
-    AI Pipeline(Qwen)이 잘못 분류했을 때 보정하는 용도. category는 Qwen 구조화
-    추출 스펙과 동일한 8개 후보값(coupon/ticket/reservation/academic/receipt/
-    document/photo/other)만 허용하며, 그 외 값은 422로 거부됨.
+    AI Pipeline이 잘못 분류했을 때 보정하는 용도.
+    category는 EventType과 동일한 10개 후보값(expiration/exam/assignment_due/reservation/
+    departure/check_in/performance/meeting/schedule/none)만 허용하며, 그 외 값은
+    422로 거부됨.
 
     요청자 소유가 아닌 이미지는 404로 응답한다 (존재 여부 비노출).
     """
@@ -185,8 +182,7 @@ def list_images(
     요청자 소유 이미지 목록 조회 (최신순, 평면 목록).
 
     아직 다듬어야 할 부분:
-    - 카테고리 폴더링 없음: AI Pipeline이 연동되어 category가 채워지기 전까지는 폴더 UI에 쓸 수 없다.
-    - offset 기반 페이지네이션: 이미지 수가 늘어나면 커서 기반으로 바꾸는 게 나을 수 있다.
+        offset 기반 페이지네이션: 이미지 수가 늘어나면 커서 기반으로 바꾸는 게 나을 수 있다.
     """
     images = images_crud.list_images(user_id=user_id, limit=limit, offset=offset)
     storage_paths = [image["storage_path"] for image in images]

@@ -3,22 +3,14 @@ app/services/ai_pipeline_service.py
 
 AI Pipeline(OCR -> BLIP -> Qwen -> KURE 임베딩) 호출 서비스 경계.
 
-모델 내부(OCR/캡셔닝/구조화 추출/임베딩)는 팀원(문진서) 담당이므로 이 파일은 그
-파이프라인을 "호출"하는 인터페이스만 정의한다.
+파이프라인을 "호출"하는 인터페이스만 정의.
 
-호출 방식 (2026-09-07부터 HTTP로 전환): 예전에는 monorepo의 형제 패키지
-`ai/src/`를 직접 import해서 같은 프로세스 안에서 호출했는데, 이러면 백엔드
-프로세스 자체가 GPU 서버(Ollama가 떠 있는 곳) 위에서 돌아야만 동작하는 문제가
-있었다 - 그 GPU 서버는 방화벽에서 SSH(8022)만 열려있고 다른 포트는 다 막혀있어서,
-Railway 같은 외부 배포 환경에서는 그 서버에 직접 접근할 방법이 없었다 (직접
-Test-NetConnection으로 확인함).
-
-진서님이 그 GPU 서버 위에서 파이프라인 전체(OCR/BLIP/Qwen/KURE 임베딩)를 감싸는
-FastAPI 서버(`POST /analyze`)를 만들고 Cloudflare Tunnel(`cloudflared`)로 노출해둬서,
-이제 HTTP로 호출한다. Cloudflare Tunnel은 GPU 서버가 아웃바운드로 연결을 열어서
-공개 URL을 받는 방식이라, 인바운드 방화벽 설정 변경 없이도 외부(Railway 포함)에서
-그 URL로 접속할 수 있다. 단, `trycloudflare.com` quick tunnel URL은 `cloudflared`
-재시작 시 바뀔 수 있어 매번 하드코딩하지 않고 AI_SERVER_URL 환경변수로 받는다.
+호출 방식:
+GPU 서버 위에서 파이프라인 전체를 감싸는 FastAPI 서버(`POST /analyze`)를 만들고
+Cloudflare Tunnel(`cloudflared`)로 노출해둬서 이제 HTTP로 호출.
+Cloudflare Tunnel은 GPU 서버가 아웃바운드로 연결을 열어서 공개 URL을 받는 방식이라
+인바운드 방화벽 설정 변경 없이도 외부에서 그 URL로 접속할 수 있다.
+단, URL은 `cloudflared` 재시작 시 바뀔 수 있어 매번 하드코딩하지 않고 AI_SERVER_URL 환경변수로 받는다.
 
 POST {AI_SERVER_URL}/analyze의 반환 계약 (ai/src/models.py::Event 기준):
     {
@@ -36,8 +28,7 @@ POST {AI_SERVER_URL}/analyze의 반환 계약 (ai/src/models.py::Event 기준):
         "location": "string | null",
         "search_text": "...",
         "metadata": {
-          "category": "string | null",   # 8개 고정값이 아니라 자유 텍스트.
-          ...                             # reservation_number/amount 등 나머지는
+          ...                             # reservation_number/amount 등은
                                           # events 테이블이 아직 스텁이라 지금은 사용 안 함.
         },
       },
@@ -46,6 +37,11 @@ POST {AI_SERVER_URL}/analyze의 반환 계약 (ai/src/models.py::Event 기준):
       "fallback_used": bool,            # 디버깅용, 사용 안 함
       "fallback_reasons": [...],        # 디버깅용, 사용 안 함
     }
+
+metadata.category 필드는 완전히 삭제됨. event.type과 의미가 중복돼서
+실제로는 항상 비거나 부정확하게 채워지고 있었음.
+images.type 컬럼은 이제 metadata.category가 아니라 event.type에서 직접 가져옴.
+event.type이 "none"이면 images.type도 None으로 남긴다.
 
 event는 events 테이블 대상 데이터다 - events_crud가 아직 스텁이라 지금은 저장하지
 않고 호출부에 그대로 전달만 한다. events_crud가 구현되면 라우터에서 event.type이
@@ -84,7 +80,6 @@ class EventInfo(TypedDict):
 class AIPipelineResult(TypedDict):
     ocr_text: Optional[str]
     caption: Optional[str]
-    primary_category: Optional[str]
     search_text: Optional[str]
     embedding: Optional[list[float]]
     event: EventInfo
@@ -102,7 +97,6 @@ _EMPTY_EVENT: EventInfo = {
 _EMPTY_RESULT: AIPipelineResult = {
     "ocr_text": None,
     "caption": None,
-    "primary_category": None,
     "search_text": None,
     "embedding": None,
     "event": _EMPTY_EVENT,
@@ -111,7 +105,7 @@ _EMPTY_RESULT: AIPipelineResult = {
 
 def run_ai_pipeline(file_bytes: bytes, filename: str) -> AIPipelineResult:
     """
-    업로드된 이미지 원본으로 OCR 텍스트/캡션/카테고리/search_text/이벤트/임베딩을
+    업로드된 이미지 원본으로 OCR 텍스트/캡션/search_text/이벤트(type 포함)/임베딩을
     추출한다. AI 서버(POST {AI_SERVER_URL}/analyze)를 호출한다.
 
     AI_SERVER_URL이 설정 안 되어 있거나(예: 아직 값을 못 받은 환경), 그 URL에
@@ -135,12 +129,10 @@ def run_ai_pipeline(file_bytes: bytes, filename: str) -> AIPipelineResult:
         return _EMPTY_RESULT
 
     event = raw.get("event") or {}
-    metadata = event.get("metadata") or {}
 
     return {
         "ocr_text": raw.get("ocr_text"),
         "caption": raw.get("caption"),
-        "primary_category": metadata.get("category"),
         "search_text": event.get("search_text"),
         "embedding": raw.get("embedding") or None,
         "event": {
