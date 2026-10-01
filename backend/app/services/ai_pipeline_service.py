@@ -67,6 +67,9 @@ AI_SERVER_URL = os.environ.get("AI_SERVER_URL", "").rstrip("/")
 # 더 오래 걸릴 수 있다 (실제로 직접 확인한 적 있음).
 _REQUEST_TIMEOUT_SECONDS = 120.0
 
+# 에러 응답 본문을 로그에 남길 때 최대 길이 (traceback 전체가 와도 로그가 터지지 않게)
+_ERROR_BODY_LOG_LIMIT = 1000
+
 
 class EventInfo(TypedDict):
     type: str
@@ -124,6 +127,11 @@ def run_ai_pipeline(file_bytes: bytes, filename: str) -> AIPipelineResult:
         )
         response.raise_for_status()
         raw = response.json()
+    except httpx.HTTPStatusError as error:
+        # 상태코드만으로는 AI 서버 쪽 원인을 알 수 없어서 응답 본문(detail 등)도 같이 남긴다.
+        body = error.response.text[:_ERROR_BODY_LOG_LIMIT]
+        print(f"[ai_pipeline_service] AI 서버 호출 실패: {error}\n  응답 본문: {body}")
+        return _EMPTY_RESULT
     except Exception as error:
         print(f"[ai_pipeline_service] AI 서버 호출 실패: {error}")
         return _EMPTY_RESULT
